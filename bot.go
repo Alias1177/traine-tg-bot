@@ -13,12 +13,18 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// Глобальная переменная для отслеживания обрабатываемых обновлений
+var processedUpdates = make(map[int]bool)
+var processedMutex sync.RWMutex
+
 // Bot представляет телеграм бота
 type Bot struct {
 	api          *tgbotapi.BotAPI
 	openAIClient *OpenAIClient
 	sessions     map[int64]*UserSession
 	mutex        sync.RWMutex
+	// Для отслеживания последней команды /start для каждого юзера
+	lastStartTime map[int64]time.Time
 }
 
 // NewBot создает нового телеграм бота
@@ -34,10 +40,11 @@ func NewBot(token string, openAIClient *OpenAIClient) (*Bot, error) {
 	InitStripe()
 
 	return &Bot{
-		api:          api,
-		openAIClient: openAIClient,
-		sessions:     make(map[int64]*UserSession),
-		mutex:        sync.RWMutex{},
+		api:           api,
+		openAIClient:  openAIClient,
+		sessions:      make(map[int64]*UserSession),
+		mutex:         sync.RWMutex{},
+		lastStartTime: make(map[int64]time.Time),
 	}, nil
 }
 
@@ -50,11 +57,43 @@ func (b *Bot) Start() {
 
 	log.Printf("Бот начал прослушивание сообщений")
 	for update := range updates {
+		// Проверка на дубликаты обновлений
+		processedMutex.RLock()
+		_, exists := processedUpdates[update.UpdateID]
+		processedMutex.RUnlock()
+
+		if exists {
+			log.Printf("Пропуск дублирующего обновления ID: %d", update.UpdateID)
+			continue
+		}
+
+		// Помечаем обновление как обработанное
+		processedMutex.Lock()
+		processedUpdates[update.UpdateID] = true
+		processedMutex.Unlock()
+
+		// Очистка старых обновлений каждые 100 сообщений
+		if len(processedUpdates) > 100 {
+			go b.cleanOldUpdates()
+		}
+
 		if update.Message != nil {
 			go b.handleMessage(update.Message)
 		} else if update.CallbackQuery != nil {
 			go b.handleCallback(update.CallbackQuery)
 		}
+	}
+}
+
+// cleanOldUpdates удаляет старые записи из кэша обработанных обновлений
+func (b *Bot) cleanOldUpdates() {
+	processedMutex.Lock()
+	defer processedMutex.Unlock()
+
+	// Оставляем последние 50 обновлений
+	if len(processedUpdates) > 50 {
+		processedUpdates = make(map[int]bool)
+		log.Printf("Кэш обработанных обновлений очищен")
 	}
 }
 
@@ -83,29 +122,237 @@ func (b *Bot) saveSession(userID int64, session *UserSession) {
 	log.Printf("Сохранена сессия для пользователя %d в состоянии %d", userID, session.State)
 }
 
+// sendMessageWithKeyboard отправляет сообщение с клавиатурой
+func (b *Bot) sendMessageWithKeyboard(chatID int64, text string, keyboard *tgbotapi.InlineKeyboardMarkup) (int, error) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	if keyboard != nil {
+		msg.ReplyMarkup = keyboard
+	}
+
+	sentMsg, err := b.api.Send(msg)
+	if err != nil {
+		return 0, err
+	}
+
+	return sentMsg.MessageID, nil
+}
+
+// handleCallback обрабатывает callback запросы (нажатия на кнопки)
+func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	log.Printf("Получен callback от %s (%d): %s", callback.From.UserName, userID, callback.Data)
+
+	// Сначала ответим на коллбэк, чтобы убрать часы загрузки
+	b.api.Request(tgbotapi.NewCallback(callback.ID, ""))
+
+	// Получаем сессию пользователя
+	session := b.getSession(userID)
+
+	// Проверяем дублирование callback
+	if session.CheckDuplicateCallback(callback.Data) {
+		log.Printf("Пропуск дублирующего callback: %s от пользователя %d", callback.Data, userID)
+		return
+	}
+
+	// Получаем человекочитаемое представление выбора для отображения в сообщении
+	choiceText := getUserFriendlyChoice(callback.Data)
+
+	// Обрабатываем нажатие кнопки
+	response, err := session.ProcessButtonCallback(callback.Data)
+	if err != nil {
+		log.Printf("Ошибка обработки callback: %v", err)
+		b.api.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Произошла ошибка. Попробуйте ещё раз. (%v)", err)))
+		return
+	}
+
+	// Если это команда /pay, обрабатываем её отдельно
+	if response == "/pay" {
+		paymentLink, err := CreatePayment(userID)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Произошла ошибка при создании платежа: %v", err)
+			b.api.Send(tgbotapi.NewMessage(chatID, errorMsg))
+			return
+		}
+
+		payMsg := fmt.Sprintf("Для оплаты перейдите по ссылке: %s", paymentLink)
+		b.api.Send(tgbotapi.NewMessage(chatID, payMsg))
+		b.saveSession(userID, session)
+		return
+	}
+
+	// Удаляем старую клавиатуру у предыдущего сообщения
+	if callback.Message != nil {
+		editMsg := tgbotapi.NewEditMessageText(
+			chatID,
+			callback.Message.MessageID,
+			callback.Message.Text+"\n\n✅ Выбрано: "+choiceText,
+		)
+		editMsg.ReplyMarkup = &tgbotapi.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{},
+		}
+		_, err := b.api.Send(editMsg)
+		if err != nil {
+			log.Printf("Ошибка при редактировании сообщения: %v", err)
+		}
+	}
+
+	// Отправляем следующий вопрос с клавиатурой
+	keyboard := session.GetKeyboardForState()
+	messageID, err := b.sendMessageWithKeyboard(chatID, response, keyboard)
+	if err != nil {
+		log.Printf("Ошибка отправки сообщения с клавиатурой: %v", err)
+	} else {
+		session.LastMessageID = messageID
+	}
+
+	// Сохраняем обновленную сессию
+	b.saveSession(userID, session)
+}
+
+// getUserFriendlyChoice возвращает удобное для пользователя представление выбора
+func getUserFriendlyChoice(data string) string {
+	if len(data) < 4 {
+		return data
+	}
+
+	var prefix, value string
+
+	// Определяем префикс и значение
+	if data[:4] == "sex:" {
+		prefix = CallbackSex
+		value = data[4:]
+	} else if data[:4] == "dia:" {
+		prefix = CallbackDiabetes
+		value = data[4:]
+	} else if data[:4] == "lvl:" {
+		prefix = CallbackLevel
+		value = data[4:]
+	} else if data[:4] == "gol:" {
+		prefix = CallbackGoal
+		value = data[4:]
+	} else if data[:4] == "typ:" {
+		prefix = CallbackType
+		value = data[4:]
+	} else {
+		return data
+	}
+
+	switch prefix {
+	case CallbackSex:
+		return map[string]string{
+			"male":   "Мужской",
+			"female": "Женский",
+		}[value]
+
+	case CallbackDiabetes:
+		return map[string]string{
+			"yes": "Да",
+			"no":  "Нет",
+		}[value]
+
+	case CallbackLevel:
+		return map[string]string{
+			"beginner":     "Начинающий",
+			"intermediate": "Средний",
+			"advanced":     "Продвинутый",
+		}[value]
+
+	case CallbackGoal:
+		return map[string]string{
+			"weight_loss": "Похудение",
+			"muscle_gain": "Набор массы",
+			"maintenance": "Поддержание формы",
+			"endurance":   "Улучшение выносливости",
+		}[value]
+
+	case CallbackType:
+		return map[string]string{
+			"strength": "Силовые",
+			"cardio":   "Кардио",
+			"mixed":    "Смешанные",
+			"yoga":     "Йога",
+			"pilates":  "Пилатес",
+			"other":    "Другое",
+		}[value]
+	}
+
+	return data
+}
+
+// checkStartCommand проверяет, можно ли обработать команду /start
+func (b *Bot) checkStartCommand(userID int64) bool {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	lastTime, exists := b.lastStartTime[userID]
+	now := time.Now()
+
+	// Если команда /start вызвана впервые или прошло более 5 секунд с предыдущего вызова
+	if !exists || now.Sub(lastTime) > 5*time.Second {
+		b.lastStartTime[userID] = now
+		return true
+	}
+
+	return false
+}
+
 // handleMessage обрабатывает входящие сообщения
 func (b *Bot) handleMessage(message *tgbotapi.Message) {
-	log.Printf("Получено сообщение от %s (%d): %s", message.From.UserName, message.From.ID, message.Text)
+	userID := message.From.ID
+	chatID := message.Chat.ID
+
+	log.Printf("Получено сообщение от %s (%d): %s", message.From.UserName, userID, message.Text)
+
+	// Получаем сессию пользователя
+	session := b.getSession(userID)
+
+	// Проверяем лимит сообщений
+	if !session.IncrementMessageCount() {
+		msg := tgbotapi.NewMessage(chatID, "Вы достигли лимита сообщений. Пожалуйста, попробуйте позже.")
+		_, err := b.api.Send(msg)
+		if err != nil {
+			log.Printf("Ошибка отправки сообщения о лимите: %v", err)
+		}
+		return
+	}
 
 	// Обработка специальных команд
 	if message.IsCommand() {
+		// Проверяем на дублирование команды
+		if session.CheckDuplicateCommand(message.Text) {
+			log.Printf("Пропуск дублирующей команды: %s от пользователя %d", message.Text, userID)
+			return
+		}
+
 		switch message.Command() {
 		case "start":
+			// Дополнительная проверка на дублирование /start
+			if !b.checkStartCommand(userID) {
+				log.Printf("Пропуск дублирующей команды /start от пользователя %d", userID)
+				return
+			}
+
 			// Создаем новую сессию
-			session := NewUserSession(message.From.ID)
-			b.saveSession(message.From.ID, session)
+			session = NewUserSession(userID)
+			b.saveSession(userID, session)
 
 			// Начинаем диалог
 			response, _ := session.ProcessInput("")
-			msg := tgbotapi.NewMessage(message.Chat.ID, response)
-			_, err := b.api.Send(msg)
+			keyboard := session.GetKeyboardForState() // Получаем клавиатуру для текущего состояния
+
+			messageID, err := b.sendMessageWithKeyboard(chatID, response, keyboard)
 			if err != nil {
 				log.Printf("Ошибка отправки сообщения: %v", err)
+			} else {
+				session.LastMessageID = messageID
+				b.saveSession(userID, session)
 			}
 			return
 
 		case "help":
-			msg := tgbotapi.NewMessage(message.Chat.ID, "Я помогу создать персональную программу тренировок на основе ваших данных. Используйте /start чтобы начать.")
+			msg := tgbotapi.NewMessage(chatID, "Я помогу создать персональную программу тренировок на основе ваших данных. Используйте /start чтобы начать.")
 			_, err := b.api.Send(msg)
 			if err != nil {
 				log.Printf("Ошибка отправки сообщения: %v", err)
@@ -113,9 +360,8 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 			return
 
 		case "pay":
-			session := b.getSession(message.From.ID)
 			if session.State != StatePayment {
-				msg := tgbotapi.NewMessage(message.Chat.ID, "Пожалуйста, сначала заполните информацию о себе с помощью команды /start")
+				msg := tgbotapi.NewMessage(chatID, "Пожалуйста, сначала заполните информацию о себе с помощью команды /start")
 				_, err := b.api.Send(msg)
 				if err != nil {
 					log.Printf("Ошибка отправки сообщения: %v", err)
@@ -124,7 +370,7 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 			}
 
 			response, err := session.ProcessInput("/pay")
-			msg := tgbotapi.NewMessage(message.Chat.ID, response)
+			msg := tgbotapi.NewMessage(chatID, response)
 			_, err = b.api.Send(msg)
 			if err != nil {
 				log.Printf("Ошибка отправки сообщения: %v", err)
@@ -134,9 +380,8 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 		case "complete_payment":
 			// Отладочная команда для ручного завершения оплаты
 			if os.Getenv("ENABLE_DEBUG_COMMANDS") == "true" {
-				session := b.getSession(message.From.ID)
 				if session.State != StatePayment {
-					msg := tgbotapi.NewMessage(message.Chat.ID, "Эта команда работает только если вы находитесь на этапе оплаты")
+					msg := tgbotapi.NewMessage(chatID, "Эта команда работает только если вы находитесь на этапе оплаты")
 					_, err := b.api.Send(msg)
 					if err != nil {
 						log.Printf("Ошибка отправки сообщения: %v", err)
@@ -145,10 +390,10 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 				}
 
 				// Эмулируем успешную оплату
-				sessionID := ManuallyCompletePayment(message.From.ID)
+				sessionID := ManuallyCompletePayment(userID)
 				err := b.ProcessPaymentWebhook(sessionID)
 				if err != nil {
-					msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("Ошибка при эмуляции оплаты: %v", err))
+					msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Ошибка при эмуляции оплаты: %v", err))
 					_, err := b.api.Send(msg)
 					if err != nil {
 						log.Printf("Ошибка отправки сообщения: %v", err)
@@ -158,7 +403,7 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 			}
 
 			// Если отладочные команды отключены, показываем обычную подсказку
-			msg := tgbotapi.NewMessage(message.Chat.ID, "Неизвестная команда. Используйте /help для получения справки.")
+			msg := tgbotapi.NewMessage(chatID, "Неизвестная команда. Используйте /help для получения справки.")
 			_, err := b.api.Send(msg)
 			if err != nil {
 				log.Printf("Ошибка отправки сообщения: %v", err)
@@ -166,9 +411,8 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 			return
 
 		case "get_plan", "plan":
-			session := b.getSession(message.From.ID)
 			if session.State != StateComplete {
-				msg := tgbotapi.NewMessage(message.Chat.ID, "Пожалуйста, сначала заполните информацию о себе и оплатите услугу с помощью команды /start")
+				msg := tgbotapi.NewMessage(chatID, "Пожалуйста, сначала заполните информацию о себе и оплатите услугу с помощью команды /start")
 				_, err := b.api.Send(msg)
 				if err != nil {
 					log.Printf("Ошибка отправки сообщения: %v", err)
@@ -177,30 +421,38 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 			}
 
 			// Отправляем уведомление, что начинаем генерацию
-			msg := tgbotapi.NewMessage(message.Chat.ID, "Генерирую вашу персональную программу тренировок...")
+			msg := tgbotapi.NewMessage(chatID, "Генерирую вашу персональную программу тренировок...")
 			_, err := b.api.Send(msg)
 			if err != nil {
 				log.Printf("Ошибка отправки сообщения: %v", err)
 			}
 
 			// Генерируем и отправляем план тренировок
-			err = b.sendTrainingPlan(message.Chat.ID, session)
+			err = b.sendTrainingPlan(chatID, session)
 			if err != nil {
 				log.Printf("Ошибка отправки плана тренировок: %v", err)
-				errorMsg := tgbotapi.NewMessage(message.Chat.ID, "Произошла ошибка при генерации программы тренировок. Пожалуйста, попробуйте позже.")
+				errorMsg := tgbotapi.NewMessage(chatID, "Произошла ошибка при генерации программы тренировок. Пожалуйста, попробуйте позже.")
 				_, _ = b.api.Send(errorMsg)
 			}
+			return
+		}
+	} else {
+		// Для не-команд проверяем дублирование только для состояния завершено
+		if session.State == StateComplete && session.CheckDuplicateCommand(message.Text) {
+			log.Printf("Пропуск дублирующего сообщения от пользователя %d", userID)
 			return
 		}
 	}
 
 	// Обработка обычных сообщений через сессию
-	session := b.getSession(message.From.ID)
 	response, err := session.ProcessInput(message.Text)
+	if err != nil {
+		log.Printf("Ошибка обработки ввода: %v", err)
+	}
 
 	// Если это завершенная сессия и сообщение не команда, генерируем ответ GPT
 	if session.State == StateComplete && !message.IsCommand() {
-		chatAction := tgbotapi.NewChatAction(message.Chat.ID, tgbotapi.ChatTyping)
+		chatAction := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 		_, err := b.api.Request(chatAction)
 		if err != nil {
 			log.Printf("Ошибка отправки статуса 'печатает': %v", err)
@@ -219,12 +471,12 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 				errorMessage = "Превышен лимит запросов к OpenAI. Попробуйте позже."
 			}
 
-			msg := tgbotapi.NewMessage(message.Chat.ID, errorMessage)
+			msg := tgbotapi.NewMessage(chatID, errorMessage)
 			_, _ = b.api.Send(msg)
 			return
 		}
 
-		msg := tgbotapi.NewMessage(message.Chat.ID, gptResponse)
+		msg := tgbotapi.NewMessage(chatID, gptResponse)
 		_, err = b.api.Send(msg)
 		if err != nil {
 			log.Printf("Ошибка отправки ответа: %v", err)
@@ -232,26 +484,19 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 		return
 	}
 
-	// Отправляем обычный ответ из процесса диалога
-	if err != nil {
-		log.Printf("Ошибка обработки ввода: %v", err)
-	}
+	// Получаем клавиатуру для текущего состояния
+	keyboard := session.GetKeyboardForState()
 
-	msg := tgbotapi.NewMessage(message.Chat.ID, response)
-	_, err = b.api.Send(msg)
+	// Отправляем сообщение с клавиатурой
+	messageID, err := b.sendMessageWithKeyboard(chatID, response, keyboard)
 	if err != nil {
-		log.Printf("Ошибка отправки сообщения: %v", err)
+		log.Printf("Ошибка отправки сообщения с клавиатурой: %v", err)
+	} else {
+		session.LastMessageID = messageID
 	}
 
 	// Сохраняем обновленную сессию
-	b.saveSession(message.From.ID, session)
-}
-
-// handleCallback обрабатывает callback запросы (для кнопок)
-func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
-	// Пока у нас нет обработки callback, но здесь можно будет добавить логику
-	// для обработки результатов платежа, если нужно
-	b.api.Request(tgbotapi.NewCallback(callback.ID, ""))
+	b.saveSession(userID, session)
 }
 
 // sendTrainingPlan генерирует и отправляет план тренировок
@@ -299,8 +544,24 @@ func (b *Bot) sendTrainingPlan(chatID int64, session *UserSession) error {
 	}
 	log.Printf("План тренировок успешно отправлен для чата %d", chatID)
 
-	// Отправляем дополнительное сообщение с инструкциями
-	followupMsg := tgbotapi.NewMessage(chatID, "Вот ваша персональная программа тренировок! Теперь вы можете задавать мне вопросы по программе или попросить уточнить любую часть программы.")
+	// Добавляем кнопки для удобства дальнейшего взаимодействия
+	followupMsg := tgbotapi.NewMessage(
+		chatID,
+		"Вот ваша персональная программа тренировок! Теперь вы можете задавать мне вопросы по программе или попросить уточнить любую часть программы.",
+	)
+
+	// Добавляем кнопки подсказки для вопросов
+	followupMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Уточнить питание", CallbackAsk+"nutrition"),
+			tgbotapi.NewInlineKeyboardButtonData("Уточнить упражнения", CallbackAsk+"exercises"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Как отслеживать прогресс", CallbackAsk+"progress"),
+			tgbotapi.NewInlineKeyboardButtonData("Что делать при диабете", CallbackAsk+"diabetes"),
+		),
+	)
+
 	_, err = b.api.Send(followupMsg)
 	if err != nil {
 		log.Printf("Ошибка отправки финального сообщения: %v", err)
