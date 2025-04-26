@@ -33,6 +33,21 @@ func LoadConfig() (*Config, error) {
 		return nil, errors.New("OPENAI_TOKEN не установлен")
 	}
 
+	// Для локальной разработки - опционально используем webhook secret
+	stripeWebhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	if stripeWebhookSecret == "" {
+		log.Printf("ВНИМАНИЕ: STRIPE_WEBHOOK_SECRET не установлен, подписи webhook не будут проверяться")
+	}
+
+	// Печатаем порт для отладки
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "4242"
+		log.Printf("Используется порт по умолчанию: %s", port)
+	} else {
+		log.Printf("Используется указанный порт: %s", port)
+	}
+
 	return &Config{
 		TelegramToken: telegramToken,
 		OpenAIToken:   openAIToken,
