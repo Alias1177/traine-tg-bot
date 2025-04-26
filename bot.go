@@ -137,7 +137,6 @@ func (b *Bot) sendMessageWithKeyboard(chatID int64, text string, keyboard *tgbot
 	return sentMsg.MessageID, nil
 }
 
-// handleCallback обрабатывает callback запросы (нажатия на кнопки)
 func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
 	chatID := callback.Message.Chat.ID
@@ -153,6 +152,26 @@ func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
 	// Проверяем дублирование callback
 	if session.CheckDuplicateCallback(callback.Data) {
 		log.Printf("Пропуск дублирующего callback: %s от пользователя %d", callback.Data, userID)
+		return
+	}
+
+	// Особая обработка для кнопки "pay"
+	if callback.Data == "pay" {
+		// Создаем ссылку для оплаты
+		paymentURL, err := CreatePayment(userID)
+		if err != nil {
+			log.Printf("Ошибка создания ссылки для оплаты: %v", err)
+			errorMsg := fmt.Sprintf("Произошла ошибка при создании платежа: %v", err)
+			b.api.Send(tgbotapi.NewMessage(chatID, errorMsg))
+			return
+		}
+
+		// Отправляем пользователю ссылку
+		msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Для оплаты перейдите по ссылке: %s", paymentURL))
+		_, err = b.api.Send(msg)
+		if err != nil {
+			log.Printf("Ошибка отправки ссылки для оплаты: %v", err)
+		}
 		return
 	}
 

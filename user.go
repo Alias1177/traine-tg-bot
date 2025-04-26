@@ -4,6 +4,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -52,13 +54,18 @@ type UserData struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// String возвращает строковое представление данных пользователя
 func (u *UserData) String() string {
-	jsonData, err := json.MarshalIndent(u, "", "  ")
-	if err != nil {
-		return "Ошибка форматирования данных"
+	// Для внутренних целей (логирование, webhook) используем JSON
+	if os.Getenv("USE_JSON_FORMAT") == "true" {
+		jsonData, err := json.MarshalIndent(u, "", "  ")
+		if err != nil {
+			return "Ошибка форматирования данных"
+		}
+		return string(jsonData)
 	}
-	return string(jsonData)
+
+	// Для отображения пользователю используем красивое форматирование
+	return u.FormatUserDataBeautifully()
 }
 
 // UserSession представляет сессию пользователя
@@ -187,9 +194,23 @@ func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 		return &keyboard
 
 	case StatePayment:
+		// Создаем URL для оплаты заранее
+		paymentURL, err := CreatePayment(s.UserID)
+		if err != nil {
+			log.Printf("Ошибка создания ссылки для оплаты: %v", err)
+			// Если не удалось создать ссылку, используем callback-кнопку
+			keyboard := tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("💳 Оплатить", "pay"),
+				),
+			)
+			return &keyboard
+		}
+
+		// Используем URL-кнопку с красивым эмодзи и более заметным текстом
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Оплатить", "pay"),
+				tgbotapi.NewInlineKeyboardButtonURL("💳 Перейти к оплате", paymentURL),
 			),
 		)
 		return &keyboard
@@ -452,6 +473,16 @@ func (s *UserSession) ProcessButtonCallback(data string) (string, error) {
 		return "Некорректные данные", fmt.Errorf("некорректные данные callback: %s", data)
 	}
 
+	if data == "pay" {
+		// Создаем ссылку для оплаты
+		paymentURL, err := CreatePayment(s.UserID)
+		if err != nil {
+			return "Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже.", err
+		}
+		// Возвращаем ссылку напрямую, бот отправит ее как сообщение
+		return fmt.Sprintf("Для оплаты перейдите по ссылке: %s", paymentURL), nil
+	}
+
 	// Обработка вопросов о программе тренировок
 	if strings.HasPrefix(data, "ask_") {
 		question := strings.TrimPrefix(data, "ask_")
@@ -535,6 +566,24 @@ func (s *UserSession) ProcessButtonCallback(data string) (string, error) {
 	return s.GetNextQuestion(), nil
 }
 
+// FormatUserDataBeautifully возвращает красиво отформатированные данные пользователя
+func (u *UserData) FormatUserDataBeautifully() string {
+	// Формируем читабельное представление данных пользователя
+	return fmt.Sprintf(
+		"👤 *Ваши данные*\n\n"+
+			"• Пол: %s\n"+
+			"• Возраст: %d лет\n"+
+			"• Рост: %d см\n"+
+			"• Вес: %d кг\n"+
+			"• Диабет: %s\n"+
+			"• Уровень подготовки: %s\n"+
+			"• Цель: %s\n"+
+			"• Предпочитаемый тип тренировок: %s",
+		u.Sex, u.Age, u.Height, u.Weight, u.Diabetes,
+		u.Level, u.FitnessGoal, u.FitnessType,
+	)
+}
+
 // ProcessInput обрабатывает ввод пользователя на основе текущего состояния
 func (s *UserSession) ProcessInput(input string) (string, error) {
 	switch s.State {
@@ -601,14 +650,17 @@ func (s *UserSession) ProcessInput(input string) (string, error) {
 
 	case StatePayment:
 		if input == "/pay" {
-			// Здесь будет логика создания платежа
+			// Если пользователь ввел команду /pay, создаем ссылку и отправляем ее в тексте
 			paymentLink, err := CreatePayment(s.UserID)
 			if err != nil {
 				return "Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже.", err
 			}
 			return fmt.Sprintf("Для оплаты перейдите по ссылке: %s", paymentLink), nil
 		}
-		return "Для оплаты введите команду /pay", nil
+
+		// Используем красивое форматирование данных вместо JSON
+		return fmt.Sprintf("Спасибо! Ваша информация собрана:\n\n%s\n\nДля получения персональной программы тренировок, пожалуйста, оплатите услугу. Нажмите кнопку или введите /pay",
+			s.Data.FormatUserDataBeautifully()), nil
 
 	case StateComplete:
 		return "Ваша персональная программа тренировок уже создана. Если вы хотите начать заново, используйте команду /start", nil
