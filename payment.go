@@ -17,7 +17,6 @@ func InitStripe() {
 	stripeKey := os.Getenv("STRIPE_SECRET_KEY")
 	if stripeKey == "" {
 		log.Println("ВНИМАНИЕ: STRIPE_SECRET_KEY не установлен, используется тестовый ключ!")
-		stripeKey = "sk_test_51OvzFvICWrE4bwxoFbvNn5ZLsrJHMfgFu0i12PeMmrgnxbXBVcxZmV3Oj8yN2OJauxfAyHhk2WbRSLGLYMZgOWBq00T3rdtUQY"
 	}
 	stripe.Key = stripeKey
 	log.Printf("Stripe API инициализирован с ключом: %s***", stripeKey[:10])
