@@ -17,7 +17,7 @@ import (
 	"github.com/stripe/stripe-go/v72/webhook"
 )
 
-// WebhookHandler обрабатывает webhook-события
+// WebhookHandler processes webhook events
 type WebhookHandler struct {
 	bot           *Bot
 	webhookSecret string
@@ -25,187 +25,187 @@ type WebhookHandler struct {
 
 func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	log.Printf("Получен запрос %s %s", r.Method, r.URL.Path)
+	log.Printf("Received request %s %s", r.Method, r.URL.Path)
 
 	const MaxBodyBytes = int64(65536)
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 
 	payload, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("Ошибка чтения webhook: %v", err)
+		log.Printf("Error reading webhook: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	// Выводим полезную информацию для отладки
-	log.Printf("Получен webhook, длина: %d байт, заголовки: %v", len(payload), r.Header)
+	// Output useful information for debugging
+	log.Printf("Received webhook, length: %d bytes, headers: %v", len(payload), r.Header)
 
-	// Проверяем подпись webhook если секрет установлен
+	// Check webhook signature if secret is set
 	var event stripe.Event
 	if h.webhookSecret != "" {
 		event, err = webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), h.webhookSecret)
 		if err != nil {
-			log.Printf("Ошибка проверки подписи webhook: %v", err)
-			// Если в локальном режиме, логируем полученный payload
+			log.Printf("Error verifying webhook signature: %v", err)
+			// If in local mode, log the received payload
 			if os.Getenv("LOG_WEBHOOK_PAYLOAD") == "true" {
-				log.Printf("Полученный webhook payload: %s", string(payload))
+				log.Printf("Received webhook payload: %s", string(payload))
 			}
 
-			// Если в тестовом режиме, продолжаем несмотря на ошибку подписи
+			// If in test mode, continue despite signature error
 			if !strings.Contains(err.Error(), "signature") || os.Getenv("STRIPE_TEST_MODE") != "true" {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			// Пытаемся распарсить событие без проверки подписи (для тестирования)
+			// Try to parse the event without signature verification (for testing)
 			if err := json.Unmarshal(payload, &event); err != nil {
-				log.Printf("Ошибка разбора события без подписи: %v", err)
+				log.Printf("Error parsing event without signature: %v", err)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			log.Printf("ВНИМАНИЕ: Обработка события без проверки подписи (только для тестирования)")
+			log.Printf("WARNING: Processing event without signature verification (for testing only)")
 		}
 	} else {
-		// Если секрет не установлен, просто разбираем JSON
+		// If secret is not set, just parse JSON
 		if err := json.Unmarshal(payload, &event); err != nil {
-			log.Printf("Ошибка разбора события: %v", err)
+			log.Printf("Error parsing event: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		log.Printf("ВНИМАНИЕ: Webhook Secret не установлен, подпись не проверяется")
+		log.Printf("WARNING: Webhook Secret not set, signature not verified")
 	}
 
-	// Логирование полученного события
-	log.Printf("Получено событие Stripe: %s [%s]", event.Type, event.ID)
+	// Log received event
+	log.Printf("Received Stripe event: %s [%s]", event.Type, event.ID)
 
-	// Обрабатываем событие
+	// Process event
 	switch event.Type {
 	case "checkout.session.completed":
 		var session stripe.CheckoutSession
 		err := json.Unmarshal(event.Data.Raw, &session)
 		if err != nil {
-			log.Printf("Ошибка разбора события checkout.session.completed: %v", err)
+			log.Printf("Error parsing checkout.session.completed event: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("Обработка успешной оплаты: %s, для пользователя: %s", session.ID, session.ClientReferenceID)
+		log.Printf("Processing successful payment: %s, for user: %s", session.ID, session.ClientReferenceID)
 
 		err = h.bot.ProcessPaymentWebhook(session.ID)
 		if err != nil {
-			log.Printf("Ошибка обработки платежа: %v", err)
+			log.Printf("Error processing payment: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		log.Printf("Успешно обработан платеж: %s", session.ID)
+		log.Printf("Successfully processed payment: %s", session.ID)
 	case "payment_intent.succeeded":
-		log.Printf("Получено событие payment_intent.succeeded, но обработка происходит по checkout.session.completed")
+		log.Printf("Received payment_intent.succeeded event, but processing happens on checkout.session.completed")
 	default:
-		log.Printf("Получено необрабатываемое событие типа: %s", event.Type)
+		log.Printf("Received unprocessed event type: %s", event.Type)
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("Обработка webhook заняла %s", elapsed)
+	log.Printf("Webhook processing took %s", elapsed)
 	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
-	// Настраиваем логирование
+	// Configure logging
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.Printf("Запуск приложения")
+	log.Printf("Starting application")
 
-	// Загрузка конфигурации
+	// Load configuration
 	config, err := LoadConfig()
 	if err != nil {
-		log.Fatalf("Ошибка загрузки конфигурации: %v", err)
+		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	// Инициализация OpenAI клиента
+	// Initialize OpenAI client
 	openAIClient := NewOpenAIClient(config.OpenAIToken)
 
-	// Инициализация и запуск бота
+	// Initialize and start bot
 	bot, err := NewBot(config.TelegramToken, openAIClient)
 	if err != nil {
-		log.Fatalf("Ошибка инициализации бота: %v", err)
+		log.Fatalf("Error initializing bot: %v", err)
 	}
 
-	// Запуск обработки сообщений в отдельной горутине
+	// Start message processing in a separate goroutine
 	go bot.Start()
-	fmt.Println("Бот запущен...")
+	fmt.Println("Bot started...")
 
-	// Настройка HTTP сервера для webhook'ов
+	// Configure HTTP server for webhooks
 	webhookHandler := &WebhookHandler{
 		bot:           bot,
 		webhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
 
-	// Выводим дополнительную информацию для отладки
-	log.Printf("Настройка webhook для Stripe на пути /webhook/stripe")
+	// Output additional information for debugging
+	log.Printf("Setting up webhook for Stripe at path /webhook/stripe")
 	http.Handle("/webhook/stripe", webhookHandler)
-	http.Handle("/webhook", webhookHandler) // Альтернативный путь для webhook
+	http.Handle("/webhook", webhookHandler) // Alternative path for webhook
 
-	// Для отладки - простой handler, чтобы проверить работу сервера
+	// For debugging - simple handler to check server operation
 	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Получен ping-запрос")
+		log.Printf("Received ping request")
 		w.Write([]byte("pong"))
 	})
 
-	// Мониторинг
+	// Monitoring
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Запрос статуса сервера")
+		log.Printf("Server status request")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "ok",
 			"time":   time.Now().Format(time.RFC3339),
 		})
 	})
-	// Настройка статических файлов
+	// Setup static files
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 
-	// Обработчик успешной оплаты
+	// Successful payment handler
 	http.HandleFunc("/payment/success", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Получен запрос на страницу успешной оплаты: %s", r.URL.String())
+		log.Printf("Received request to success payment page: %s", r.URL.String())
 
-		// Получаем ID сессии из URL
+		// Get session ID from URL
 		sessionID := r.URL.Query().Get("session_id")
 		if sessionID != "" {
-			log.Printf("ID сессии оплаты: %s", sessionID)
+			log.Printf("Payment session ID: %s", sessionID)
 
-			// Пытаемся обработать успешный платеж через webhook,
-			// если пользователь вернулся через success_url
+			// Try to process successful payment through webhook,
+			// if user returned via success_url
 			if os.Getenv("STRIPE_TEST_MODE") == "true" {
 				go func() {
-					log.Printf("Тестовый режим: автоматическая обработка успешного платежа")
-					// Даем время на обработку обычного webhook
+					log.Printf("Test mode: automatic processing of successful payment")
+					// Give time for normal webhook processing
 					time.Sleep(2 * time.Second)
 
-					// Обрабатываем платеж, если он еще не был обработан
+					// Process payment if it hasn't been processed yet
 					webhookHandler.bot.ProcessPaymentWebhook(sessionID)
 				}()
 			}
 		}
 
-		// Отправляем HTML-страницу успешной оплаты
+		// Send HTML success payment page
 		http.ServeFile(w, r, "./static/succed.html")
 	})
 
-	// Обработчик отмены оплаты
+	// Payment cancellation handler
 	http.HandleFunc("/payment/cancel", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Получен запрос на страницу отмены оплаты")
+		log.Printf("Received request to cancel payment page")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(`
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Оплата отменена</title>
+            <title>Payment Cancelled</title>
             <script>
-                // Автоматический редирект в Telegram через 3 секунды
+                // Automatic redirect to Telegram after 3 seconds
                 window.onload = function() {
                     setTimeout(function() {
                         window.location.href = 'tg://';
                         
-                        // Запасной вариант, если tg:// не сработает
+                        // Fallback if tg:// doesn't work
                         setTimeout(function() {
                             window.location.href = 'https://web.telegram.org/';
                         }, 1000);
@@ -214,31 +214,31 @@ func main() {
             </script>
         </head>
         <body style="text-align: center; margin-top: 50px;">
-            <h1>Оплата отменена</h1>
-            <p>Вы будете перенаправлены обратно в Telegram через 3 секунды...</p>
-            <a href="tg://">Вернуться в Telegram сейчас</a>
+            <h1>Payment Cancelled</h1>
+            <p>You will be redirected back to Telegram in 3 seconds...</p>
+            <a href="tg://">Return to Telegram now</a>
         </body>
         </html>
     `))
 	})
 
-	// Запуск HTTP сервера
+	// Start HTTP server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4242"
 	}
 
 	go func() {
-		log.Printf("Запуск HTTP сервера на порту %s", port)
+		log.Printf("Starting HTTP server on port %s", port)
 		if err := http.ListenAndServe(":"+port, nil); err != nil {
-			log.Printf("Ошибка запуска HTTP сервера: %v", err)
+			log.Printf("Error starting HTTP server: %v", err)
 		}
 	}()
 
-	// Настройка graceful shutdown
+	// Configure graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	fmt.Println("Завершение работы бота...")
+	fmt.Println("Shutting down bot...")
 }

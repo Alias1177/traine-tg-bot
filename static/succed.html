@@ -46,14 +46,14 @@
         }
     </style>
     <script>
-        // Автоматический редирект в Telegram через 3 секунды
+        // Automatic redirect to Telegram after 3 seconds
         window.onload = function() {
             setTimeout(function() {
-                // Пробуем открыть через tg:// схему
+                // Try to open via tg:// scheme
                 window.location.href = 'tg://';
 
-                // Также устанавливаем таймер на открытие веб-версии Telegram
-                // в случае, если схема tg:// не сработает
+                // Also set a timer to open web version of Telegram
+                // in case the tg:// scheme doesn't work
                 setTimeout(function() {
                     window.location.href = 'https://web.telegram.org/';
                 }, 1000);
@@ -67,10 +67,10 @@
     <path fill="none" stroke="#4CAF50" stroke-width="5" d="M14 27l7 7 16-16"/>
 </svg>
 
-<h1>Платеж успешно завершен!</h1>
-<p>Спасибо за оплату! Ваша программа тренировок готова.</p>
+<h1>Payment Successfully Completed!</h1>
+<p>Thank you for your payment! Your workout program is ready.</p>
 
-<div class="redirect">Автоматический возврат в Telegram через 3 секунды...</div>
-<a href="tg://" class="button">Вернуться в Telegram сейчас</a>
+<div class="redirect">Automatic return to Telegram in 3 seconds...</div>
+<a href="tg://" class="button">Return to Telegram now</a>
 </body>
 </html>

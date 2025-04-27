@@ -9,43 +9,43 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config содержит конфигурацию приложения
+// Config contains application configuration
 type Config struct {
 	TelegramToken string
 	OpenAIToken   string
 }
 
-// LoadConfig загружает конфигурацию из переменных окружения или .env файла
+// LoadConfig loads configuration from environment variables or .env file
 func LoadConfig() (*Config, error) {
-	// Загрузка из .env файла
+	// Load from .env file
 	if err := godotenv.Load(); err != nil {
-		log.Printf("Предупреждение: Не удалось загрузить .env файл: %v", err)
-		// Продолжаем работу - возможно, переменные окружения уже установлены
+		log.Printf("Warning: Failed to load .env file: %v", err)
+		// Continue - environment variables may already be set
 	}
 
 	telegramToken := os.Getenv("TELEGRAM_TOKEN")
 	if telegramToken == "" {
-		return nil, errors.New("TELEGRAM_TOKEN не установлен")
+		return nil, errors.New("TELEGRAM_TOKEN not set")
 	}
 
 	openAIToken := os.Getenv("OPENAI_TOKEN")
 	if openAIToken == "" {
-		return nil, errors.New("OPENAI_TOKEN не установлен")
+		return nil, errors.New("OPENAI_TOKEN not set")
 	}
 
-	// Для локальной разработки - опционально используем webhook secret
+	// For local development - optionally use webhook secret
 	stripeWebhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 	if stripeWebhookSecret == "" {
-		log.Printf("ВНИМАНИЕ: STRIPE_WEBHOOK_SECRET не установлен, подписи webhook не будут проверяться")
+		log.Printf("WARNING: STRIPE_WEBHOOK_SECRET not set, webhook signatures will not be verified")
 	}
 
-	// Печатаем порт для отладки
+	// Print port for debugging
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4242"
-		log.Printf("Используется порт по умолчанию: %s", port)
+		log.Printf("Using default port: %s", port)
 	} else {
-		log.Printf("Используется указанный порт: %s", port)
+		log.Printf("Using specified port: %s", port)
 	}
 
 	return &Config{

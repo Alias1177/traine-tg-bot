@@ -12,51 +12,51 @@ import (
 	"github.com/stripe/stripe-go/v72/checkout/session"
 )
 
-// InitStripe инициализирует Stripe API
+// InitStripe initializes Stripe API
 func InitStripe() {
 	stripeKey := os.Getenv("STRIPE_SECRET_KEY")
 	if stripeKey == "" {
-		log.Println("ВНИМАНИЕ: STRIPE_SECRET_KEY не установлен, используется тестовый ключ!")
+		log.Println("WARNING: STRIPE_SECRET_KEY not set, using test key!")
 	}
 	stripe.Key = stripeKey
-	log.Printf("Stripe API инициализирован с ключом: %s***", stripeKey[:10])
+	log.Printf("Stripe API initialized with key: %s***", stripeKey[:10])
 }
 
-// PaymentConfig содержит конфигурацию для платежей
+// PaymentConfig contains payment configuration
 type PaymentConfig struct {
 	ProductName   string
 	ProductDesc   string
-	PriceAmount   int64 // в минимальных единицах валюты (центы, копейки и т.д.)
+	PriceAmount   int64 // in minimum currency units (cents, kopecks, etc.)
 	Currency      string
 	SuccessURL    string
 	CancelURL     string
 	WebhookSecret string
 }
 
-// GetDefaultPaymentConfig возвращает конфигурацию по умолчанию
+// GetDefaultPaymentConfig returns default configuration
 func GetDefaultPaymentConfig() PaymentConfig {
-	// Определяем базовый URL
+	// Define base URL
 	baseURL := os.Getenv("BOT_WEBHOOK_BASE_URL")
 	if baseURL == "" {
-		// Для локального тестирования
+		// For local testing
 		port := os.Getenv("PORT")
 		if port == "" {
 			port = "4242"
 		}
 		baseURL = fmt.Sprintf("http://localhost:%s", port)
 
-		// Проверяем режим работы Stripe
+		// Check Stripe mode
 		if os.Getenv("STRIPE_TEST_MODE") == "true" {
-			log.Println("Работаем в тестовом режиме Stripe, URL перенаправления будут игнорироваться")
+			log.Println("Working in Stripe test mode, redirect URLs will be ignored")
 		} else {
-			log.Println("ВНИМАНИЕ: Установите BOT_WEBHOOK_BASE_URL для корректной работы перенаправлений!")
+			log.Println("WARNING: Set BOT_WEBHOOK_BASE_URL for proper redirect operation!")
 		}
 	}
 
 	return PaymentConfig{
-		ProductName:   "Персональная фитнес-программа",
-		ProductDesc:   "Индивидуальная программа тренировок, созданная с учетом ваших параметров и целей",
-		PriceAmount:   5000, // 50.00 валютных единиц
+		ProductName:   "Personalized Fitness Program",
+		ProductDesc:   "Individual workout program created based on your parameters and goals",
+		PriceAmount:   5000, // 50.00 currency units
 		Currency:      "rub",
 		SuccessURL:    fmt.Sprintf("%s/payment/success?session_id={CHECKOUT_SESSION_ID}", baseURL),
 		CancelURL:     fmt.Sprintf("%s/payment/cancel?session_id={CHECKOUT_SESSION_ID}", baseURL),
@@ -64,18 +64,18 @@ func GetDefaultPaymentConfig() PaymentConfig {
 	}
 }
 
-// CreatePayment создает платежную сессию Stripe и возвращает URL для оплаты
+// CreatePayment creates a Stripe payment session and returns URL for payment
 func CreatePayment(userID int64) (string, error) {
 	config := GetDefaultPaymentConfig()
 
-	// Проверяем минимальный размер платежа
+	// Check minimum payment amount
 	if config.PriceAmount < 5000 {
-		log.Printf("ВНИМАНИЕ: Сумма платежа %d может быть слишком маленькой для Stripe", config.PriceAmount)
+		log.Printf("WARNING: Payment amount %d may be too small for Stripe", config.PriceAmount)
 	}
 
-	// Преобразуем ID пользователя в строку и логируем его
+	// Convert user ID to string and log it
 	userIDStr := strconv.FormatInt(userID, 10)
-	log.Printf("Создание платежа для пользователя ID: %s", userIDStr)
+	log.Printf("Creating payment for user ID: %s", userIDStr)
 
 	params := &stripe.CheckoutSessionParams{
 		PaymentMethodTypes: stripe.StringSlice([]string{
@@ -102,53 +102,53 @@ func CreatePayment(userID int64) (string, error) {
 
 	s, err := session.New(params)
 	if err != nil {
-		log.Printf("Ошибка создания сессии Stripe: %v", err)
+		log.Printf("Error creating Stripe session: %v", err)
 		return "", err
 	}
 
-	log.Printf("Создана сессия Stripe %s для пользователя %s с URL: %s", s.ID, userIDStr, s.URL)
+	log.Printf("Created Stripe session %s for user %s with URL: %s", s.ID, userIDStr, s.URL)
 	return s.URL, nil
 }
 
-// VerifyPayment проверяет статус оплаты
+// VerifyPayment checks payment status
 func VerifyPayment(sessionID string) (bool, string, error) {
-	log.Printf("Проверка статуса платежа для сессии: %s", sessionID)
+	log.Printf("Checking payment status for session: %s", sessionID)
 
-	// Дополнительная проверка параметров
+	// Additional parameter check
 	if sessionID == "" {
-		return false, "", fmt.Errorf("пустой ID сессии")
+		return false, "", fmt.Errorf("empty session ID")
 	}
 
 	s, err := session.Get(sessionID, nil)
 	if err != nil {
-		log.Printf("Ошибка получения данных сессии %s: %v", sessionID, err)
+		log.Printf("Error getting session data %s: %v", sessionID, err)
 		return false, "", err
 	}
 
-	// Выводим все данные о сессии для отладки
-	log.Printf("Сессия: %s, Статус платежа: %s, ID клиента: %s, Режим: %s",
+	// Output all session data for debugging
+	log.Printf("Session: %s, Payment status: %s, Client ID: %s, Mode: %s",
 		s.ID, s.PaymentStatus, s.ClientReferenceID, s.Mode)
 
-	// Для локального тестирования - всегда считаем платеж успешным
+	// For local testing - always consider payment successful
 	if os.Getenv("STRIPE_TEST_MODE") == "true" {
-		log.Printf("ТЕСТОВЫЙ РЕЖИМ: Считаем платеж успешным")
+		log.Printf("TEST MODE: Considering payment successful")
 		return true, s.ClientReferenceID, nil
 	}
 
-	// Проверяем статус платежа
+	// Check payment status
 	if s.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid {
-		log.Printf("Платеж подтвержден для сессии: %s", sessionID)
+		log.Printf("Payment confirmed for session: %s", sessionID)
 		return true, s.ClientReferenceID, nil
 	}
 
-	log.Printf("Платеж не подтвержден для сессии: %s (статус: %s)", sessionID, s.PaymentStatus)
+	log.Printf("Payment not confirmed for session: %s (status: %s)", sessionID, s.PaymentStatus)
 	return false, s.ClientReferenceID, nil
 }
 
-// ManuallyCompletePayment позволяет вручную завершить платеж для тестирования
+// ManuallyCompletePayment allows manually completing payment for testing
 func ManuallyCompletePayment(userID int64) string {
-	// Генерируем фиктивный ID сессии
+	// Generate a fake session ID
 	sessionID := fmt.Sprintf("cs_test_manual_%d_%d", userID, time.Now().Unix())
-	log.Printf("Вручную завершен платеж: %s для пользователя %d", sessionID, userID)
+	log.Printf("Payment manually completed: %s for user %d", sessionID, userID)
 	return sessionID
 }

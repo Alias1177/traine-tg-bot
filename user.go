@@ -13,7 +13,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// UserState представляет состояние диалога с пользователем
+// UserState represents the state of dialog with the user
 type UserState int
 
 const (
@@ -30,7 +30,7 @@ const (
 	StateComplete
 )
 
-// CallbackPrefix - префиксы для callback данных
+// CallbackPrefix - prefixes for callback data
 const (
 	CallbackSex      = "sex:"
 	CallbackDiabetes = "dia:"
@@ -40,7 +40,7 @@ const (
 	CallbackAsk      = "ask:"
 )
 
-// UserData структура для хранения данных пользователя
+// UserData structure for storing user data
 type UserData struct {
 	Sex         string    `json:"Sex"`
 	Age         int       `json:"Age"`
@@ -55,33 +55,33 @@ type UserData struct {
 }
 
 func (u *UserData) String() string {
-	// Для внутренних целей (логирование, webhook) используем JSON
+	// For internal purposes (logging, webhook) use JSON
 	if os.Getenv("USE_JSON_FORMAT") == "true" {
 		jsonData, err := json.MarshalIndent(u, "", "  ")
 		if err != nil {
-			return "Ошибка форматирования данных"
+			return "Error formatting data"
 		}
 		return string(jsonData)
 	}
 
-	// Для отображения пользователю используем красивое форматирование
+	// For user display use beautiful formatting
 	return u.FormatUserDataBeautifully()
 }
 
-// UserSession представляет сессию пользователя
+// UserSession represents a user session
 type UserSession struct {
 	UserID          int64
 	State           UserState
 	Data            UserData
 	CreatedAt       time.Time
-	MessageCount    int       // Счетчик сообщений
-	LastCommandTime time.Time // Время последней команды для избежания дублирования
-	LastCommand     string    // Последняя команда для избежания дублирования
-	LastCallback    string    // Последний callback для избежания дублирования
-	LastMessageID   int       // ID последнего сообщения с кнопками
+	MessageCount    int       // Message counter
+	LastCommandTime time.Time // Time of last command to avoid duplication
+	LastCommand     string    // Last command to avoid duplication
+	LastCallback    string    // Last callback to avoid duplication
+	LastMessageID   int       // ID of last message with buttons
 }
 
-// NewUserSession создает новую сессию пользователя
+// NewUserSession creates a new user session
 func NewUserSession(userID int64) *UserSession {
 	return &UserSession{
 		UserID:          userID,
@@ -95,16 +95,16 @@ func NewUserSession(userID int64) *UserSession {
 	}
 }
 
-// IncrementMessageCount увеличивает счетчик сообщений
+// IncrementMessageCount increases the message counter
 func (s *UserSession) IncrementMessageCount() bool {
-	const MaxMessages = 10 // Максимальное количество сообщений
+	const MaxMessages = 10 // Maximum number of messages
 	s.MessageCount++
 	return s.MessageCount <= MaxMessages
 }
 
-// CheckDuplicateCommand проверяет, является ли команда дубликатом
+// CheckDuplicateCommand checks if a command is a duplicate
 func (s *UserSession) CheckDuplicateCommand(command string) bool {
-	// Проверяем, не является ли это повторной командой в течение 2 секунд
+	// Check if this is a repeated command within 2 seconds
 	if command != "" && command == s.LastCommand && time.Since(s.LastCommandTime) < 2*time.Second {
 		return true
 	}
@@ -113,9 +113,9 @@ func (s *UserSession) CheckDuplicateCommand(command string) bool {
 	return false
 }
 
-// CheckDuplicateCallback проверяет, является ли callback дубликатом
+// CheckDuplicateCallback checks if a callback is a duplicate
 func (s *UserSession) CheckDuplicateCallback(callback string) bool {
-	// Проверяем, не является ли это повторным callback в течение 2 секунд
+	// Check if this is a repeated callback within 2 seconds
 	if callback != "" && callback == s.LastCallback && time.Since(s.LastCommandTime) < 2*time.Second {
 		return true
 	}
@@ -124,14 +124,14 @@ func (s *UserSession) CheckDuplicateCallback(callback string) bool {
 	return false
 }
 
-// GetKeyboardForState возвращает клавиатуру в зависимости от текущего состояния
+// GetKeyboardForState returns a keyboard depending on the current state
 func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 	switch s.State {
 	case StateAskSex:
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Мужской", CallbackSex+"male"),
-				tgbotapi.NewInlineKeyboardButtonData("Женский", CallbackSex+"female"),
+				tgbotapi.NewInlineKeyboardButtonData("Male", CallbackSex+"male"),
+				tgbotapi.NewInlineKeyboardButtonData("Female", CallbackSex+"female"),
 			),
 		)
 		return &keyboard
@@ -139,8 +139,8 @@ func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 	case StateAskDiabetes:
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Да", CallbackDiabetes+"yes"),
-				tgbotapi.NewInlineKeyboardButtonData("Нет", CallbackDiabetes+"no"),
+				tgbotapi.NewInlineKeyboardButtonData("Yes", CallbackDiabetes+"yes"),
+				tgbotapi.NewInlineKeyboardButtonData("No", CallbackDiabetes+"no"),
 			),
 		)
 		return &keyboard
@@ -148,13 +148,13 @@ func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 	case StateAskLevel:
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Начинающий", CallbackLevel+"beginner"),
+				tgbotapi.NewInlineKeyboardButtonData("Beginner", CallbackLevel+"beginner"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Средний", CallbackLevel+"intermediate"),
+				tgbotapi.NewInlineKeyboardButtonData("Intermediate", CallbackLevel+"intermediate"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Продвинутый", CallbackLevel+"advanced"),
+				tgbotapi.NewInlineKeyboardButtonData("Advanced", CallbackLevel+"advanced"),
 			),
 		)
 		return &keyboard
@@ -162,16 +162,16 @@ func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 	case StateAskGoal:
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Похудение", CallbackGoal+"weight_loss"),
+				tgbotapi.NewInlineKeyboardButtonData("Weight Loss", CallbackGoal+"weight_loss"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Набор массы", CallbackGoal+"muscle_gain"),
+				tgbotapi.NewInlineKeyboardButtonData("Muscle Gain", CallbackGoal+"muscle_gain"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Поддержание формы", CallbackGoal+"maintenance"),
+				tgbotapi.NewInlineKeyboardButtonData("Maintenance", CallbackGoal+"maintenance"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Улучшение выносливости", CallbackGoal+"endurance"),
+				tgbotapi.NewInlineKeyboardButtonData("Endurance Improvement", CallbackGoal+"endurance"),
 			),
 		)
 		return &keyboard
@@ -179,52 +179,52 @@ func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 	case StateAskType:
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Силовые", CallbackType+"strength"),
-				tgbotapi.NewInlineKeyboardButtonData("Кардио", CallbackType+"cardio"),
+				tgbotapi.NewInlineKeyboardButtonData("Strength", CallbackType+"strength"),
+				tgbotapi.NewInlineKeyboardButtonData("Cardio", CallbackType+"cardio"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Смешанные", CallbackType+"mixed"),
-				tgbotapi.NewInlineKeyboardButtonData("Йога", CallbackType+"yoga"),
+				tgbotapi.NewInlineKeyboardButtonData("Mixed", CallbackType+"mixed"),
+				tgbotapi.NewInlineKeyboardButtonData("Yoga", CallbackType+"yoga"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Пилатес", CallbackType+"pilates"),
-				tgbotapi.NewInlineKeyboardButtonData("Другое", CallbackType+"other"),
+				tgbotapi.NewInlineKeyboardButtonData("Pilates", CallbackType+"pilates"),
+				tgbotapi.NewInlineKeyboardButtonData("Other", CallbackType+"other"),
 			),
 		)
 		return &keyboard
 
 	case StatePayment:
-		// Создаем URL для оплаты заранее
+		// Create payment URL in advance
 		paymentURL, err := CreatePayment(s.UserID)
 		if err != nil {
-			log.Printf("Ошибка создания ссылки для оплаты: %v", err)
-			// Если не удалось создать ссылку, используем callback-кнопку
+			log.Printf("Error creating payment link: %v", err)
+			// If failed to create link, use callback button
 			keyboard := tgbotapi.NewInlineKeyboardMarkup(
 				tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData("💳 Оплатить", "pay"),
+					tgbotapi.NewInlineKeyboardButtonData("💳 Pay", "pay"),
 				),
 			)
 			return &keyboard
 		}
 
-		// Используем URL-кнопку с красивым эмодзи и более заметным текстом
+		// Use URL button with nice emoji and more noticeable text
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonURL("💳 Перейти к оплате", paymentURL),
+				tgbotapi.NewInlineKeyboardButtonURL("💳 Go to Payment", paymentURL),
 			),
 		)
 		return &keyboard
 
 	case StateComplete:
-		// Кнопки для вопросов после оплаты
+		// Buttons for questions after payment
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Уточнить питание", CallbackAsk+"nutrition"),
-				tgbotapi.NewInlineKeyboardButtonData("Уточнить упражнения", CallbackAsk+"exercises"),
+				tgbotapi.NewInlineKeyboardButtonData("Clarify Nutrition", CallbackAsk+"nutrition"),
+				tgbotapi.NewInlineKeyboardButtonData("Clarify Exercises", CallbackAsk+"exercises"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Как отслеживать прогресс", CallbackAsk+"progress"),
-				tgbotapi.NewInlineKeyboardButtonData("Что делать при диабете", CallbackAsk+"diabetes"),
+				tgbotapi.NewInlineKeyboardButtonData("How to Track Progress", CallbackAsk+"progress"),
+				tgbotapi.NewInlineKeyboardButtonData("What to do with Diabetes", CallbackAsk+"diabetes"),
 			),
 		)
 		return &keyboard
@@ -233,257 +233,256 @@ func (s *UserSession) GetKeyboardForState() *tgbotapi.InlineKeyboardMarkup {
 	return nil
 }
 
-// GetNextQuestion возвращает следующий вопрос в зависимости от текущего состояния
+// GetNextQuestion returns the next question based on current state
 func (s *UserSession) GetNextQuestion() string {
 	switch s.State {
 	case StateAskSex:
-		return "Укажите ваш пол:"
+		return "Specify your gender:"
 	case StateAskAge:
-		return "Укажите ваш возраст (полных лет):"
+		return "Specify your age (full years):"
 	case StateAskHeight:
-		return "Укажите ваш рост в сантиметрах (например, 175):"
+		return "Specify your height in centimeters (for example, 175):"
 	case StateAskWeight:
-		return "Укажите ваш вес в килограммах (например, 70):"
+		return "Specify your weight in kilograms (for example, 70):"
 	case StateAskDiabetes:
-		return "У вас есть диабет?"
+		return "Do you have diabetes?"
 	case StateAskLevel:
-		return "Оцените ваш текущий уровень физической подготовки:"
+		return "Rate your current fitness level:"
 	case StateAskGoal:
-		return "Какова ваша главная цель?"
+		return "What is your main goal?"
 	case StateAskType:
-		return "Какой тип тренировок вы предпочитаете?"
+		return "What type of workouts do you prefer?"
 	case StatePayment:
-		return fmt.Sprintf("Спасибо! Ваша информация собрана:\n\n%s\n\nДля получения персональной программы тренировок, пожалуйста, оплатите услугу. Нажмите кнопку или введите /pay", s.Data.String())
+		return fmt.Sprintf("Thank you! Your information has been collected:\n\n%s\n\nTo receive a personalized workout program, please pay for the service. Click the button or enter /pay", s.Data.String())
 	case StateComplete:
-		return "Ваша персональная программа тренировок уже создана. Если вы хотите начать заново, используйте команду /start"
+		return "Your personalized workout program has already been created. If you want to start over, use the /start command"
 	default:
-		return "Что-то пошло не так. Попробуйте начать сначала с команды /start"
+		return "Something went wrong. Try starting over with the /start command"
 	}
 }
 
-// GetAskQuestionAnswer возвращает ответ на вопрос о программе
-// GetAskQuestionAnswer возвращает ответ на вопрос о программе
+// GetAskQuestionAnswer returns an answer to a question about the program
 func (s *UserSession) GetAskQuestionAnswer(question string) string {
 	switch question {
 	case "nutrition":
-		// Рекомендации по питанию
-		baseText := "🍽️ **РЕКОМЕНДАЦИИ ПО ПИТАНИЮ**\n\n"
+		// Nutrition recommendations
+		baseText := "🍽️ **NUTRITION RECOMMENDATIONS**\n\n"
 
 		weight := s.Data.Weight
 		height := s.Data.Height
 		goal := s.Data.FitnessGoal
 
-		if goal == "похудение" {
-			baseText += fmt.Sprintf("Для достижения вашей цели похудения, с учетом вашего веса %d кг и роста %d см, рекомендуется потреблять примерно %d-%d калорий в день, с дефицитом 400-500 калорий.\n\n",
+		if goal == "weight loss" {
+			baseText += fmt.Sprintf("To achieve your weight loss goal, considering your weight %d kg and height %d cm, it is recommended to consume approximately %d-%d calories per day, with a deficit of 400-500 calories.\n\n",
 				weight, height, (weight*30)-500, (weight*30)-400)
-		} else if goal == "набор массы" {
-			baseText += fmt.Sprintf("Для набора мышечной массы, с учетом вашего веса %d кг, рекомендуется потреблять примерно %d-%d калорий в день, с профицитом 300-400 калорий.\n\n",
+		} else if goal == "muscle gain" {
+			baseText += fmt.Sprintf("For muscle mass gain, considering your weight %d kg, it is recommended to consume approximately %d-%d calories per day, with a surplus of 300-400 calories.\n\n",
 				weight, (weight*30)+300, (weight*30)+400)
 		} else {
-			baseText += fmt.Sprintf("Для поддержания вашего текущего веса %d кг рекомендуется потреблять примерно %d-%d калорий в день.\n\n",
+			baseText += fmt.Sprintf("To maintain your current weight of %d kg, it is recommended to consume approximately %d-%d calories per day.\n\n",
 				weight, weight*28, weight*30)
 		}
 
-		baseText += "Рекомендуемое распределение макронутриентов:\n" +
-			"- Белки: 1.6-2.0 г на кг веса тела (примерно " + fmt.Sprintf("%d-%d", int(float64(weight)*1.6), int(float64(weight)*2.0)) + " г в день)\n" +
-			"- Жиры: 0.8-1.0 г на кг веса тела (примерно " + fmt.Sprintf("%d-%d", int(float64(weight)*0.8), int(float64(weight)*1.0)) + " г в день)\n" +
-			"- Углеводы: оставшаяся часть калорий\n\n"
+		baseText += "Recommended macronutrient distribution:\n" +
+			"- Protein: 1.6-2.0 g per kg of body weight (approximately " + fmt.Sprintf("%d-%d", int(float64(weight)*1.6), int(float64(weight)*2.0)) + " g per day)\n" +
+			"- Fats: 0.8-1.0 g per kg of body weight (approximately " + fmt.Sprintf("%d-%d", int(float64(weight)*0.8), int(float64(weight)*1.0)) + " g per day)\n" +
+			"- Carbohydrates: the remaining calories\n\n"
 
-		baseText += "**Рекомендуемый режим питания:**\n" +
-			"1. Завтрак: белковая пища + сложные углеводы (овсянка, яйца, нежирный творог)\n" +
-			"2. Перекус: фрукт или протеиновый коктейль\n" +
-			"3. Обед: белок + овощи + сложные углеводы (мясо/рыба, овощи, гречка/рис/киноа)\n" +
-			"4. Перекус: орехи, йогурт или творог\n" +
-			"5. Ужин (минимум за 2-3 часа до сна): белок + овощи (куриная грудка/рыба, овощной салат)\n\n"
+		baseText += "**Recommended meal schedule:**\n" +
+			"1. Breakfast: protein food + complex carbohydrates (oatmeal, eggs, low-fat cottage cheese)\n" +
+			"2. Snack: fruit or protein shake\n" +
+			"3. Lunch: protein + vegetables + complex carbohydrates (meat/fish, vegetables, buckwheat/rice/quinoa)\n" +
+			"4. Snack: nuts, yogurt, or cottage cheese\n" +
+			"5. Dinner (at least 2-3 hours before sleep): protein + vegetables (chicken breast/fish, vegetable salad)\n\n"
 
-		baseText += "**Рекомендации по питьевому режиму:**\n" +
-			fmt.Sprintf("- Пейте не менее %d мл воды в день\n", weight*30) +
-			"- Пейте стакан воды за 30 минут до каждого приема пищи\n" +
-			"- Ограничьте потребление алкоголя и сладких напитков\n\n"
+		baseText += "**Recommendations for fluid intake:**\n" +
+			fmt.Sprintf("- Drink at least %d ml of water per day\n", weight*30) +
+			"- Drink a glass of water 30 minutes before each meal\n" +
+			"- Limit alcohol and sweet drinks consumption\n\n"
 
-		if s.Data.Diabetes == "да" {
-			baseText += "**Особые рекомендации при диабете:**\n" +
-				"- Избегайте продуктов с высоким гликемическим индексом\n" +
-				"- Контролируйте порции углеводов\n" +
-				"- Равномерно распределяйте углеводы в течение дня\n" +
-				"- Регулярно измеряйте уровень сахара в крови\n" +
-				"- Проконсультируйтесь с эндокринологом для детального плана питания\n"
+		if s.Data.Diabetes == "yes" {
+			baseText += "**Special recommendations for diabetes:**\n" +
+				"- Avoid foods with high glycemic index\n" +
+				"- Control carbohydrate portions\n" +
+				"- Distribute carbohydrates evenly throughout the day\n" +
+				"- Regularly measure blood sugar levels\n" +
+				"- Consult with an endocrinologist for a detailed meal plan\n"
 		}
 
 		return baseText
 
 	case "exercises":
-		// Рекомендации по упражнениям
-		baseText := "💪 **ПРОГРАММА УПРАЖНЕНИЙ**\n\n"
+		// Exercise recommendations
+		baseText := "💪 **EXERCISE PROGRAM**\n\n"
 		fitnessType := s.Data.FitnessType
 
-		if fitnessType == "силовые" {
-			baseText += "**Силовая тренировка A (Понедельник):**\n" +
-				"1. Разминка: 5-10 минут кардио и динамическая растяжка\n" +
-				"2. Приседания: 4 подхода по 10-12 повторений\n" +
-				"3. Жим лежа: 4 подхода по 8-10 повторений\n" +
-				"4. Тяга в наклоне: 3 подхода по 10-12 повторений\n" +
-				"5. Отжимания: 3 подхода до отказа\n" +
-				"6. Планка: 3 подхода по 30-60 секунд\n" +
-				"7. Растяжка: 5-10 минут\n\n"
+		if fitnessType == "strength" {
+			baseText += "**Strength Workout A (Monday):**\n" +
+				"1. Warm-up: 5-10 minutes cardio and dynamic stretching\n" +
+				"2. Squats: 4 sets of 10-12 repetitions\n" +
+				"3. Bench press: 4 sets of 8-10 repetitions\n" +
+				"4. Bent-over rows: 3 sets of 10-12 repetitions\n" +
+				"5. Push-ups: 3 sets to failure\n" +
+				"6. Plank: 3 sets of 30-60 seconds\n" +
+				"7. Stretching: 5-10 minutes\n\n"
 
-			baseText += "**Силовая тренировка B (Четверг):**\n" +
-				"1. Разминка: 5-10 минут кардио и динамическая растяжка\n" +
-				"2. Становая тяга: 4 подхода по 8-10 повторений\n" +
-				"3. Жим гантелей над головой: 3 подхода по 10-12 повторений\n" +
-				"4. Подтягивания (или тяга верхнего блока): 3 подхода до отказа\n" +
-				"5. Сгибания рук на бицепс: 3 подхода по 12-15 повторений\n" +
-				"6. Разгибания рук на трицепс: 3 подхода по 12-15 повторений\n" +
-				"7. Растяжка: 5-10 минут\n\n"
-		} else if fitnessType == "кардио" {
-			baseText += "**Кардио тренировка (Вторник, Пятница):**\n" +
-				"1. Разминка: 5 минут легкой ходьбы или медленного бега\n" +
-				"2. Интервальная тренировка: 30 секунд спринта + 90 секунд ходьбы (повторить 10 раз)\n" +
-				"3. Заминка: 5 минут медленной ходьбы\n\n"
+			baseText += "**Strength Workout B (Thursday):**\n" +
+				"1. Warm-up: 5-10 minutes cardio and dynamic stretching\n" +
+				"2. Deadlift: 4 sets of 8-10 repetitions\n" +
+				"3. Overhead dumbbell press: 3 sets of 10-12 repetitions\n" +
+				"4. Pull-ups (or lat pulldown): 3 sets to failure\n" +
+				"5. Bicep curls: 3 sets of 12-15 repetitions\n" +
+				"6. Tricep extensions: 3 sets of 12-15 repetitions\n" +
+				"7. Stretching: 5-10 minutes\n\n"
+		} else if fitnessType == "cardio" {
+			baseText += "**Cardio Workout (Tuesday, Friday):**\n" +
+				"1. Warm-up: 5 minutes of light walking or slow jogging\n" +
+				"2. Interval training: 30 seconds sprint + 90 seconds walking (repeat 10 times)\n" +
+				"3. Cool-down: 5 minutes slow walking\n\n"
 
-			baseText += "**HIIT тренировка (Суббота):**\n" +
-				"1. Разминка: 5 минут\n" +
-				"2. Круговая тренировка (без отдыха между упражнениями, 60 сек отдыха между кругами):\n" +
-				"   - Бёрпи: 30 секунд\n" +
-				"   - Приседания с выпрыгиванием: 30 секунд\n" +
-				"   - Альпинист: 30 секунд\n" +
-				"   - Скручивания: 30 секунд\n" +
-				"   - Прыжки со скакалкой: 60 секунд\n" +
-				"3. Повторите круг 3-5 раз\n" +
-				"4. Заминка и растяжка: 5-10 минут\n\n"
+			baseText += "**HIIT Workout (Saturday):**\n" +
+				"1. Warm-up: 5 minutes\n" +
+				"2. Circuit training (no rest between exercises, 60 sec rest between rounds):\n" +
+				"   - Burpees: 30 seconds\n" +
+				"   - Jump squats: 30 seconds\n" +
+				"   - Mountain climbers: 30 seconds\n" +
+				"   - Crunches: 30 seconds\n" +
+				"   - Jump rope: 60 seconds\n" +
+				"3. Repeat circuit 3-5 times\n" +
+				"4. Cool-down and stretching: 5-10 minutes\n\n"
 		} else {
-			baseText += "**Тренировка всего тела (3 раза в неделю - пн, ср, пт):**\n" +
-				"1. Разминка: 5-10 минут кардио и динамическая растяжка\n" +
-				"2. Приседания: 3 подхода по 12-15 повторений\n" +
-				"3. Отжимания: 3 подхода по 10-12 повторений\n" +
-				"4. Гиперэкстензия: 3 подхода по 12-15 повторений\n" +
-				"5. Планка: 3 подхода по 30-60 секунд\n" +
-				"6. Кардио: 15-20 минут (бег, велосипед, эллипс)\n" +
-				"7. Растяжка: 5-10 минут\n\n"
+			baseText += "**Full Body Workout (3 times a week - Mon, Wed, Fri):**\n" +
+				"1. Warm-up: 5-10 minutes cardio and dynamic stretching\n" +
+				"2. Squats: 3 sets of 12-15 repetitions\n" +
+				"3. Push-ups: 3 sets of 10-12 repetitions\n" +
+				"4. Back extensions: 3 sets of 12-15 repetitions\n" +
+				"5. Plank: 3 sets of 30-60 seconds\n" +
+				"6. Cardio: 15-20 minutes (running, cycling, elliptical)\n" +
+				"7. Stretching: 5-10 minutes\n\n"
 		}
 
-		baseText += "**Общие рекомендации:**\n" +
-			"- Всегда начинайте с разминки, чтобы избежать травм\n" +
-			"- Контролируйте правильную технику выполнения упражнений\n" +
-			"- Постепенно увеличивайте нагрузку каждые 2-3 недели\n" +
-			"- Если чувствуете боль (не путать с мышечной усталостью), прекратите выполнение упражнения\n" +
-			"- Делайте 1-2 дня отдыха в неделю для восстановления\n\n"
+		baseText += "**General recommendations:**\n" +
+			"- Always start with a warm-up to avoid injuries\n" +
+			"- Control proper exercise technique\n" +
+			"- Gradually increase intensity every 2-3 weeks\n" +
+			"- If you feel pain (not to be confused with muscle fatigue), stop the exercise\n" +
+			"- Take 1-2 rest days per week for recovery\n\n"
 
-		if s.Data.Level == "начинающий" {
-			baseText += "**Рекомендации для начинающих:**\n" +
-				"- Начните с меньшего веса и меньшего количества повторений\n" +
-				"- Сосредоточьтесь на изучении правильной техники\n" +
-				"- Увеличивайте нагрузку постепенно\n"
+		if s.Data.Level == "beginner" {
+			baseText += "**Recommendations for beginners:**\n" +
+				"- Start with lower weight and fewer repetitions\n" +
+				"- Focus on learning proper technique\n" +
+				"- Increase intensity gradually\n"
 		}
 
 		return baseText
 
 	case "progress":
-		// Рекомендации по отслеживанию прогресса
-		return "📊 **КАК ОТСЛЕЖИВАТЬ ПРОГРЕСС**\n\n" +
-			"**Основные метрики для отслеживания:**\n" +
-			"1. **Вес** - взвешивайтесь 1-2 раза в неделю, в одно и то же время (лучше утром натощак)\n" +
-			"2. **Замеры тела** - делайте замеры основных частей тела раз в 2-4 недели:\n" +
-			"   - Окружность шеи\n" +
-			"   - Окружность груди\n" +
-			"   - Окружность талии\n" +
-			"   - Окружность бедер\n" +
-			"   - Окружность бицепса\n" +
-			"   - Окружность бедра\n" +
-			"   - Окружность икры\n" +
-			"3. **Фотографии** - делайте фото в одинаковых условиях (освещение, поза, одежда) раз в 4 недели\n" +
-			"4. **Тренировочный дневник** - записывайте веса и повторения для каждого упражнения\n" +
-			"5. **Пищевой дневник** - отслеживайте потребляемые калории и макронутриенты\n\n" +
-			"**Дополнительные параметры:**\n" +
-			"- **Энергия и самочувствие** - оценивайте по шкале от 1 до 10\n" +
-			"- **Качество сна** - продолжительность и ощущение отдыха после сна\n" +
-			"- **Работоспособность на тренировках** - насколько легко/трудно выполнять упражнения\n\n" +
-			"**Технологии для отслеживания:**\n" +
-			"- Приложения для подсчета калорий (MyFitnessPal, FatSecret)\n" +
-			"- Приложения для тренировок (Strong, Jefit, Nike Training Club)\n" +
-			"- Фитнес-трекеры и умные часы для отслеживания активности\n\n" +
-			"**Как оценивать результаты:**\n" +
-			"- При похудении: ожидайте потерю 0.5-1 кг в неделю (безопасная норма)\n" +
-			"- При наборе массы: 0.2-0.5 кг в неделю может считаться хорошим результатом\n" +
-			"- Обращайте внимание на изменение размеров тела и самочувствие\n" +
-			"- Если прогресс остановился на 2-3 недели, пересмотрите программу и питание\n\n" +
-			"**Важно помнить:**\n" +
-			"- Прогресс редко бывает линейным\n" +
-			"- На вес влияют многие факторы (вода, соль, гормоны, стресс)\n" +
-			"- Оценивайте прогресс комплексно, а не только по весу\n" +
-			"- Будьте терпеливы - устойчивые результаты требуют времени"
+		// Progress tracking recommendations
+		return "📊 **HOW TO TRACK PROGRESS**\n\n" +
+			"**Main metrics to track:**\n" +
+			"1. **Weight** - weigh yourself 1-2 times a week, at the same time (preferably in the morning on an empty stomach)\n" +
+			"2. **Body measurements** - measure main body parts every 2-4 weeks:\n" +
+			"   - Neck circumference\n" +
+			"   - Chest circumference\n" +
+			"   - Waist circumference\n" +
+			"   - Hip circumference\n" +
+			"   - Bicep circumference\n" +
+			"   - Thigh circumference\n" +
+			"   - Calf circumference\n" +
+			"3. **Photos** - take photos in the same conditions (lighting, pose, clothing) every 4 weeks\n" +
+			"4. **Workout journal** - record weights and repetitions for each exercise\n" +
+			"5. **Food journal** - track calories and macronutrients consumed\n\n" +
+			"**Additional parameters:**\n" +
+			"- **Energy and well-being** - rate on a scale from 1 to 10\n" +
+			"- **Sleep quality** - duration and feeling of rest after sleep\n" +
+			"- **Workout performance** - how easy/difficult it is to perform exercises\n\n" +
+			"**Technologies for tracking:**\n" +
+			"- Calorie counting apps (MyFitnessPal, FatSecret)\n" +
+			"- Workout apps (Strong, Jefit, Nike Training Club)\n" +
+			"- Fitness trackers and smart watches for activity tracking\n\n" +
+			"**How to evaluate results:**\n" +
+			"- For weight loss: expect 0.5-1 kg loss per week (safe rate)\n" +
+			"- For mass gain: 0.2-0.5 kg per week can be considered a good result\n" +
+			"- Pay attention to changes in body size and well-being\n" +
+			"- If progress stops for 2-3 weeks, review your program and nutrition\n\n" +
+			"**Important to remember:**\n" +
+			"- Progress is rarely linear\n" +
+			"- Weight is affected by many factors (water, salt, hormones, stress)\n" +
+			"- Evaluate progress comprehensively, not just by weight\n" +
+			"- Be patient - sustainable results take time"
 
 	case "diabetes":
-		// Рекомендации при диабете
-		diabetesText := "🩺 **ТРЕНИРОВКИ ПРИ ДИАБЕТЕ**\n\n"
+		// Diabetes recommendations
+		diabetesText := "🩺 **WORKOUTS WITH DIABETES**\n\n"
 
-		if s.Data.Diabetes == "да" {
-			diabetesText += "**Основные рекомендации для тренировок при диабете:**\n\n" +
-				"**Перед тренировкой:**\n" +
-				"- Измерьте уровень глюкозы в крови перед тренировкой\n" +
-				"- Если уровень ниже 5.6 ммоль/л, съешьте небольшую порцию углеводов\n" +
-				"- Если уровень выше 13.9 ммоль/л, отложите интенсивную тренировку\n" +
-				"- Имейте с собой быстрые углеводы (глюкоза, сок) на случай гипогликемии\n" +
-				"- Носите идентификационный браслет диабетика\n\n" +
-				"**Во время тренировки:**\n" +
-				"- Обращайте внимание на симптомы гипогликемии (дрожь, слабость, головокружение, потливость)\n" +
-				"- При длительных тренировках (более 45-60 минут) периодически проверяйте уровень сахара\n" +
-				"- Пейте достаточно воды\n\n" +
-				"**После тренировки:**\n" +
-				"- Измерьте уровень глюкозы после тренировки\n" +
-				"- Будьте внимательны к отсроченной гипогликемии (может возникнуть через 4-48 часов)\n" +
-				"- Убедитесь, что у вас есть план питания после тренировки\n\n" +
-				"**Выбор типа тренировок:**\n" +
-				"- Комбинируйте кардио и силовые тренировки для лучшего контроля сахара\n" +
-				"- Начинайте с низкой интенсивности и постепенно увеличивайте нагрузку\n" +
-				"- Силовые тренировки улучшают чувствительность к инсулину\n" +
-				"- Аэробные тренировки умеренной интенсивности (ходьба, плавание, велосипед) хорошо подходят для контроля сахара\n\n" +
-				"**Коррекция дозы инсулина и лекарств:**\n" +
-				"- Проконсультируйтесь с вашим эндокринологом относительно коррекции дозы инсулина или лекарств перед тренировкой\n" +
-				"- Обычно требуется снижение дозы инсулина перед физической активностью\n\n" +
-				"**Важно:**\n" +
-				"- Всегда консультируйтесь с врачом перед началом новой программы тренировок\n" +
-				"- Ведите дневник, отмечая уровень сахара до, во время и после тренировок\n" +
-				"- Будьте особенно внимательны при тренировках в жару или холод\n" +
-				"- Следите за состоянием ног и используйте подходящую обувь\n"
+		if s.Data.Diabetes == "yes" {
+			diabetesText += "**Main recommendations for workouts with diabetes:**\n\n" +
+				"**Before workout:**\n" +
+				"- Measure blood glucose level before workout\n" +
+				"- If level is below 5.6 mmol/L, eat a small portion of carbohydrates\n" +
+				"- If level is above 13.9 mmol/L, postpone intensive workout\n" +
+				"- Have fast carbs with you (glucose, juice) in case of hypoglycemia\n" +
+				"- Wear a diabetic identification bracelet\n\n" +
+				"**During workout:**\n" +
+				"- Pay attention to hypoglycemia symptoms (trembling, weakness, dizziness, sweating)\n" +
+				"- For long workouts (more than 45-60 minutes) periodically check sugar level\n" +
+				"- Drink enough water\n\n" +
+				"**After workout:**\n" +
+				"- Measure glucose level after workout\n" +
+				"- Be attentive to delayed hypoglycemia (may occur 4-48 hours later)\n" +
+				"- Make sure you have a post-workout meal plan\n\n" +
+				"**Workout type selection:**\n" +
+				"- Combine cardio and strength workouts for better sugar control\n" +
+				"- Start with low intensity and gradually increase load\n" +
+				"- Strength training improves insulin sensitivity\n" +
+				"- Moderate intensity aerobic workouts (walking, swimming, cycling) are good for sugar control\n\n" +
+				"**Insulin and medication dose adjustment:**\n" +
+				"- Consult with your endocrinologist regarding insulin or medication dose adjustments before workout\n" +
+				"- Usually requires reducing insulin dose before physical activity\n\n" +
+				"**Important:**\n" +
+				"- Always consult with your doctor before starting a new workout program\n" +
+				"- Keep a journal, noting sugar levels before, during, and after workouts\n" +
+				"- Be especially careful when working out in heat or cold\n" +
+				"- Watch your feet condition and use appropriate footwear\n"
 		} else {
-			diabetesText += "У вас не указан диабет, но вот общие рекомендации, которые полезно знать всем:\n\n" +
-				"1. Регулярные физические нагрузки помогают поддерживать нормальный уровень сахара в крови\n" +
-				"2. Сбалансированное питание с контролем потребления простых углеводов поддерживает здоровый метаболизм\n" +
-				"3. Следите за ощущениями во время тренировок - слабость, головокружение, повышенная жажда могут указывать на проблемы с сахаром\n" +
-				"4. Регулярное медицинское обследование поможет выявить потенциальные проблемы на ранней стадии\n\n" +
-				"Профилактика диабета 2 типа:\n" +
-				"- Поддерживайте здоровый вес\n" +
-				"- Регулярно занимайтесь физическими упражнениями\n" +
-				"- Ешьте здоровую пищу, богатую клетчаткой и низкую по гликемическому индексу\n" +
-				"- Ограничьте потребление сахара и рафинированных углеводов\n" +
-				"- Избегайте курения и чрезмерного употребления алкоголя\n"
+			diabetesText += "You have not indicated diabetes, but here are general recommendations that are useful for everyone to know:\n\n" +
+				"1. Regular physical activity helps maintain normal blood sugar levels\n" +
+				"2. Balanced nutrition with control of simple carbohydrate intake supports healthy metabolism\n" +
+				"3. Pay attention to your feelings during workouts - weakness, dizziness, increased thirst may indicate sugar problems\n" +
+				"4. Regular medical examination will help identify potential problems at an early stage\n\n" +
+				"Type 2 diabetes prevention:\n" +
+				"- Maintain a healthy weight\n" +
+				"- Exercise regularly\n" +
+				"- Eat healthy food rich in fiber and low on glycemic index\n" +
+				"- Limit sugar and refined carbohydrate intake\n" +
+				"- Avoid smoking and excessive alcohol consumption\n"
 		}
 
 		return diabetesText
 
 	default:
-		return "Пожалуйста, уточните ваш вопрос о программе тренировок."
+		return "Please clarify your question about the workout program."
 	}
 }
 
-// ProcessButtonCallback обрабатывает нажатие на кнопку
+// ProcessButtonCallback processes button clicks
 func (s *UserSession) ProcessButtonCallback(data string) (string, error) {
 	if len(data) < 4 {
-		return "Некорректные данные", fmt.Errorf("некорректные данные callback: %s", data)
+		return "Invalid data", fmt.Errorf("invalid callback data: %s", data)
 	}
 
 	if data == "pay" {
-		// Создаем ссылку для оплаты
+		// Create payment link
 		paymentURL, err := CreatePayment(s.UserID)
 		if err != nil {
-			return "Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже.", err
+			return "An error occurred while creating payment. Please try again later.", err
 		}
-		// Возвращаем ссылку напрямую, бот отправит ее как сообщение
-		return fmt.Sprintf("Для оплаты перейдите по ссылке: %s", paymentURL), nil
+		// Return link directly, bot will send it as a message
+		return fmt.Sprintf("To make a payment, follow this link: %s", paymentURL), nil
 	}
 
-	// Обработка вопросов о программе тренировок
+	// Process questions about workout program
 	if strings.HasPrefix(data, "ask_") {
 		question := strings.TrimPrefix(data, "ask_")
 		return s.GetAskQuestionAnswer(question), nil
@@ -491,7 +490,7 @@ func (s *UserSession) ProcessButtonCallback(data string) (string, error) {
 
 	var prefix, value string
 
-	// Определяем префикс и значение
+	// Determine prefix and value
 	if strings.HasPrefix(data, CallbackSex) {
 		prefix = CallbackSex
 		value = data[len(CallbackSex):]
@@ -514,163 +513,163 @@ func (s *UserSession) ProcessButtonCallback(data string) (string, error) {
 	} else if data == "pay" {
 		return "/pay", nil
 	} else {
-		return "Неизвестная команда", fmt.Errorf("неизвестный префикс в callback: %s", data)
+		return "Unknown command", fmt.Errorf("unknown prefix in callback: %s", data)
 	}
 
-	// Обработка в зависимости от префикса
+	// Process based on prefix
 	switch prefix {
 	case CallbackSex:
 		s.Data.Sex = map[string]string{
-			"male":   "мужской",
-			"female": "женский",
+			"male":   "male",
+			"female": "female",
 		}[value]
 		s.State = StateAskAge
 
 	case CallbackDiabetes:
 		s.Data.Diabetes = map[string]string{
-			"yes": "да",
-			"no":  "нет",
+			"yes": "yes",
+			"no":  "no",
 		}[value]
 		s.State = StateAskLevel
 
 	case CallbackLevel:
 		s.Data.Level = map[string]string{
-			"beginner":     "начинающий",
-			"intermediate": "средний",
-			"advanced":     "продвинутый",
+			"beginner":     "beginner",
+			"intermediate": "intermediate",
+			"advanced":     "advanced",
 		}[value]
 		s.State = StateAskGoal
 
 	case CallbackGoal:
 		s.Data.FitnessGoal = map[string]string{
-			"weight_loss": "похудение",
-			"muscle_gain": "набор массы",
-			"maintenance": "поддержание формы",
-			"endurance":   "улучшение выносливости",
+			"weight_loss": "weight loss",
+			"muscle_gain": "muscle gain",
+			"maintenance": "maintenance",
+			"endurance":   "endurance improvement",
 		}[value]
 		s.State = StateAskType
 
 	case CallbackType:
 		s.Data.FitnessType = map[string]string{
-			"strength": "силовые",
-			"cardio":   "кардио",
-			"mixed":    "смешанные",
-			"yoga":     "йога",
-			"pilates":  "пилатес",
-			"other":    "другое",
+			"strength": "strength",
+			"cardio":   "cardio",
+			"mixed":    "mixed",
+			"yoga":     "yoga",
+			"pilates":  "pilates",
+			"other":    "other",
 		}[value]
 		s.State = StatePayment
 	}
 
-	// Возвращаем следующий вопрос
+	// Return next question
 	return s.GetNextQuestion(), nil
 }
 
-// FormatUserDataBeautifully возвращает красиво отформатированные данные пользователя
+// FormatUserDataBeautifully returns beautifully formatted user data
 func (u *UserData) FormatUserDataBeautifully() string {
-	// Формируем читабельное представление данных пользователя
+	// Format readable representation of user data
 	return fmt.Sprintf(
-		"👤 *Ваши данные*\n\n"+
-			"• Пол: %s\n"+
-			"• Возраст: %d лет\n"+
-			"• Рост: %d см\n"+
-			"• Вес: %d кг\n"+
-			"• Диабет: %s\n"+
-			"• Уровень подготовки: %s\n"+
-			"• Цель: %s\n"+
-			"• Предпочитаемый тип тренировок: %s",
+		"👤 *Your data*\n\n"+
+			"• Gender: %s\n"+
+			"• Age: %d years\n"+
+			"• Height: %d cm\n"+
+			"• Weight: %d kg\n"+
+			"• Diabetes: %s\n"+
+			"• Fitness level: %s\n"+
+			"• Goal: %s\n"+
+			"• Preferred workout type: %s",
 		u.Sex, u.Age, u.Height, u.Weight, u.Diabetes,
 		u.Level, u.FitnessGoal, u.FitnessType,
 	)
 }
 
-// ProcessInput обрабатывает ввод пользователя на основе текущего состояния
+// ProcessInput processes user input based on current state
 func (s *UserSession) ProcessInput(input string) (string, error) {
 	switch s.State {
 	case StateInitial:
 		s.State = StateAskSex
-		return "Давайте создадим для вас персональную фитнес-программу! Сначала я задам несколько вопросов.\n\nУкажите ваш пол:", nil
+		return "Let's create a personalized fitness program for you! First, I'll ask you a few questions.\n\nSpecify your gender:", nil
 
 	case StateAskSex:
-		// Если ввод текстом, а не через кнопки
+		// If input by text, not buttons
 		s.Data.Sex = input
 		s.State = StateAskAge
-		return "Укажите ваш возраст (полных лет):", nil
+		return "Specify your age (full years):", nil
 
 	case StateAskAge:
 		age, err := strconv.Atoi(input)
 		if err != nil {
-			return "Пожалуйста, введите возраст цифрами (например, 25):", nil
+			return "Please enter age in digits (for example, 25):", nil
 		}
 		s.Data.Age = age
 		s.State = StateAskHeight
-		return "Укажите ваш рост в сантиметрах (например, 175):", nil
+		return "Specify your height in centimeters (for example, 175):", nil
 
 	case StateAskHeight:
 		height, err := strconv.Atoi(input)
 		if err != nil {
-			return "Пожалуйста, введите рост цифрами в сантиметрах (например, 175):", nil
+			return "Please enter height in digits in centimeters (for example, 175):", nil
 		}
 		s.Data.Height = height
 		s.State = StateAskWeight
-		return "Укажите ваш вес в килограммах (например, 70):", nil
+		return "Specify your weight in kilograms (for example, 70):", nil
 
 	case StateAskWeight:
 		weight, err := strconv.Atoi(input)
 		if err != nil {
-			return "Пожалуйста, введите вес цифрами в килограммах (например, 70):", nil
+			return "Please enter weight in digits in kilograms (for example, 70):", nil
 		}
 		s.Data.Weight = weight
 		s.State = StateAskDiabetes
-		return "У вас есть диабет?", nil
+		return "Do you have diabetes?", nil
 
 	case StateAskDiabetes:
-		// Если ввод текстом, а не через кнопки
+		// If input by text, not buttons
 		s.Data.Diabetes = input
 		s.State = StateAskLevel
-		return "Оцените ваш текущий уровень физической подготовки:", nil
+		return "Rate your current fitness level:", nil
 
 	case StateAskLevel:
-		// Если ввод текстом, а не через кнопки
+		// If input by text, not buttons
 		s.Data.Level = input
 		s.State = StateAskGoal
-		return "Какова ваша главная цель?", nil
+		return "What is your main goal?", nil
 
 	case StateAskGoal:
-		// Если ввод текстом, а не через кнопки
+		// If input by text, not buttons
 		s.Data.FitnessGoal = input
 		s.State = StateAskType
-		return "Какой тип тренировок вы предпочитаете?", nil
+		return "What type of workouts do you prefer?", nil
 
 	case StateAskType:
-		// Если ввод текстом, а не через кнопки
+		// If input by text, not buttons
 		s.Data.FitnessType = input
 		s.State = StatePayment
-		return fmt.Sprintf("Спасибо! Ваша информация собрана:\n\n%s\n\nДля получения персональной программы тренировок, пожалуйста, оплатите услугу. Введите /pay", s.Data.String()), nil
+		return fmt.Sprintf("Thank you! Your information has been collected:\n\n%s\n\nTo receive a personalized workout program, please pay for the service. Enter /pay", s.Data.String()), nil
 
 	case StatePayment:
 		if input == "/pay" {
-			// Если пользователь ввел команду /pay, создаем ссылку и отправляем ее в тексте
+			// If user entered /pay command, create link and send it in text
 			paymentLink, err := CreatePayment(s.UserID)
 			if err != nil {
-				return "Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже.", err
+				return "An error occurred while creating payment. Please try again later.", err
 			}
-			return fmt.Sprintf("Для оплаты перейдите по ссылке: %s", paymentLink), nil
+			return fmt.Sprintf("To make a payment, follow this link: %s", paymentLink), nil
 		}
 
-		// Используем красивое форматирование данных вместо JSON
-		return fmt.Sprintf("Спасибо! Ваша информация собрана:\n\n%s\n\nДля получения персональной программы тренировок, пожалуйста, оплатите услугу. Нажмите кнопку или введите /pay",
+		// Use beautiful data formatting instead of JSON
+		return fmt.Sprintf("Thank you! Your information has been collected:\n\n%s\n\nTo receive a personalized workout program, please pay for the service. Click the button or enter /pay",
 			s.Data.FormatUserDataBeautifully()), nil
 
 	case StateComplete:
-		return "Ваша персональная программа тренировок уже создана. Если вы хотите начать заново, используйте команду /start", nil
+		return "Your personalized workout program has already been created. If you want to start over, use the /start command", nil
 
 	default:
-		return "Что-то пошло не так. Попробуйте начать сначала с команды /start", nil
+		return "Something went wrong. Try starting over with the /start command", nil
 	}
 }
 
-// SetPaymentCompleted устанавливает статус оплаты как завершенный
+// SetPaymentCompleted sets payment status as completed
 func (s *UserSession) SetPaymentCompleted(paymentID string) {
 	s.Data.PaymentID = paymentID
 	s.State = StateComplete

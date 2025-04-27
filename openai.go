@@ -12,23 +12,23 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// OpenAIClient обертка для работы с OpenAI API
+// OpenAIClient wrapper for working with OpenAI API
 type OpenAIClient struct {
 	client      *openai.Client
 	useFallback bool
 }
 
-// NewOpenAIClient создает нового клиента OpenAI
+// NewOpenAIClient creates a new OpenAI client
 func NewOpenAIClient(token string) *OpenAIClient {
-	// Проверяем токен
+	// Check token
 	if len(token) < 20 {
-		log.Println("ВНИМАНИЕ: Похоже, что токен OpenAI недействителен (слишком короткий)")
+		log.Println("WARNING: It seems that the OpenAI token is invalid (too short)")
 	}
 
 	client := openai.NewClient(token)
-	log.Printf("OpenAI клиент инициализирован с токеном: %s***", token[:10])
+	log.Printf("OpenAI client initialized with token: %s***", token[:10])
 
-	// Проверяем, нужно ли использовать заглушку
+	// Check if fallback should be used
 	useFallback := os.Getenv("USE_OPENAI_FALLBACK") == "true"
 
 	return &OpenAIClient{
@@ -37,31 +37,31 @@ func NewOpenAIClient(token string) *OpenAIClient {
 	}
 }
 
-// GetCompletion отправляет запрос к OpenAI и возвращает ответ
+// GetCompletion sends a request to OpenAI and returns the response
 func (c *OpenAIClient) GetCompletion(prompt string) (string, error) {
-	// Если включен режим заглушки, используем заглушку
+	// If fallback mode is enabled, use fallback
 	if c.useFallback {
-		log.Println("Используется режим заглушки для OpenAI")
+		log.Println("Using fallback mode for OpenAI")
 		return c.getFallbackResponse(prompt), nil
 	}
 
 	ctx := context.Background()
 
-	// Создаем базовый системный промпт для фитнес-тренера
-	systemPrompt := `Ты - опытный фитнес-тренер и диетолог. Твоя задача - давать персонализированные рекомендации 
-на основе данных пользователя, которые будут предоставлены в формате JSON в начале запроса.
-Учитывай пол, возраст, рост, вес, наличие диабета, уровень физической подготовки и цели пользователя.
-Всегда давай практичные, научно обоснованные советы, которые можно сразу применить.
-Никогда не давай советы, которые могут быть опасны для здоровья.
-Твои ответы должны быть персонализированными, конкретными и мотивирующими.`
+	// Create base system prompt for fitness trainer
+	systemPrompt := `You are an experienced fitness trainer and nutritionist. Your task is to provide personalized recommendations 
+based on user data, which will be provided in JSON format at the beginning of the request.
+Consider gender, age, height, weight, diabetes status, fitness level, and user goals.
+Always give practical, science-based advice that can be applied immediately.
+Never give advice that could be dangerous to health.
+Your responses should be personalized, specific, and motivating.`
 
-	// Устанавливаем модель
+	// Set model
 	model := openai.GPT3Dot5Turbo
 	if os.Getenv("OPENAI_MODEL") != "" {
 		model = os.Getenv("OPENAI_MODEL")
 	}
 
-	log.Printf("Отправка запроса к OpenAI (модель: %s, длина запроса: %d символов)",
+	log.Printf("Sending request to OpenAI (model: %s, request length: %d characters)",
 		model, len(prompt))
 
 	req := openai.ChatCompletionRequest{
@@ -76,23 +76,23 @@ func (c *OpenAIClient) GetCompletion(prompt string) (string, error) {
 				Content: prompt,
 			},
 		},
-		MaxTokens:   2500, // Увеличили максимальную длину ответа
-		Temperature: 0.7,  // Добавили параметр температуры для более стабильных ответов
+		MaxTokens:   2500, // Increased maximum response length
+		Temperature: 0.7,  // Added temperature parameter for more stable responses
 	}
 
-	// Устанавливаем таймаут для запроса
+	// Set timeout for request
 	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	resp, err := c.client.CreateChatCompletion(timeoutCtx, req)
 	if err != nil {
-		log.Printf("Ошибка OpenAI API: %v", err)
+		log.Printf("OpenAI API error: %v", err)
 
-		// Если ошибка связана с лимитами или таймаутом, включаем режим заглушки
+		// If error is related to limits or timeout, enable fallback mode
 		if strings.Contains(err.Error(), "429") ||
 			strings.Contains(err.Error(), "timeout") ||
 			strings.Contains(err.Error(), "connection") {
-			log.Println("Переключение на режим заглушки из-за ошибки API")
+			log.Println("Switching to fallback mode due to API error")
 			c.useFallback = true
 			return c.getFallbackResponse(prompt), nil
 		}
@@ -100,103 +100,103 @@ func (c *OpenAIClient) GetCompletion(prompt string) (string, error) {
 	}
 
 	if len(resp.Choices) == 0 {
-		log.Println("OpenAI вернул пустой ответ")
-		return "", errors.New("нет ответа от OpenAI")
+		log.Println("OpenAI returned empty response")
+		return "", errors.New("no response from OpenAI")
 	}
 
 	answer := resp.Choices[0].Message.Content
-	log.Printf("Получен ответ от OpenAI (длина: %d символов)", len(answer))
+	log.Printf("Received response from OpenAI (length: %d characters)", len(answer))
 	return answer, nil
 }
 
-// getFallbackResponse возвращает локальный ответ без обращения к API
+// getFallbackResponse returns a local response without API call
 func (c *OpenAIClient) getFallbackResponse(prompt string) string {
-	// Проверяем, содержит ли запрос ключевые слова для плана тренировок
-	if strings.Contains(strings.ToLower(prompt), "программа тренировок") ||
-		strings.Contains(strings.ToLower(prompt), "план тренировок") {
-		return `📋 ПЕРСОНАЛЬНАЯ ПРОГРАММА ТРЕНИРОВОК
+	// Check if the request contains keywords for workout plan
+	if strings.Contains(strings.ToLower(prompt), "workout program") ||
+		strings.Contains(strings.ToLower(prompt), "training plan") {
+		return `📋 PERSONALIZED WORKOUT PROGRAM
 
-Исходя из ваших данных, я составил оптимальную программу тренировок на 2 недели:
+Based on your data, I've created an optimal workout program for 2 weeks:
 
-## НЕДЕЛЬНЫЙ ПЛАН
+## WEEKLY PLAN
 
-**Понедельник**: Силовая тренировка (верх) - 45 минут
-**Вторник**: Кардио - 30 минут
-**Среда**: Отдых
-**Четверг**: Силовая тренировка (низ) - 45 минут
-**Пятница**: Кардио + легкая силовая - 40 минут
-**Суббота**: Активный отдых (прогулка, йога) - 30 минут
-**Воскресенье**: Полный отдых
+**Monday**: Strength training (upper body) - 45 minutes
+**Tuesday**: Cardio - 30 minutes
+**Wednesday**: Rest
+**Thursday**: Strength training (lower body) - 45 minutes
+**Friday**: Cardio + light strength - 40 minutes
+**Saturday**: Active recovery (walking, yoga) - 30 minutes
+**Sunday**: Complete rest
 
-## ПОДРОБНЫЕ ТРЕНИРОВКИ
+## DETAILED WORKOUTS
 
-### ПОНЕДЕЛЬНИК (СИЛОВАЯ - ВЕРХ)
-1. Разминка - 5 минут
-2. Отжимания: 3 подхода по 10-12 повторений
-3. Тяга гантелей в наклоне: 3×12
-4. Жим гантелей от плеч: 3×12
-5. Бицепс с гантелями: 3×12
-6. Трицепс (отжимания от скамьи): 3×15
-7. Растяжка - 5 минут
+### MONDAY (STRENGTH - UPPER BODY)
+1. Warm-up - 5 minutes
+2. Push-ups: 3 sets of 10-12 repetitions
+3. Dumbbell rows: 3×12
+4. Shoulder press: 3×12
+5. Bicep curls: 3×12
+6. Tricep dips: 3×15
+7. Stretching - 5 minutes
 
-### ВТОРНИК (КАРДИО)
-1. Разминка - 5 минут
-2. Интервальная тренировка:
-   - 1 минута быстрой ходьбы/бега
-   - 1 минута обычной ходьбы
-   - Повторять 10 раз
-3. Заминка - 5 минут
+### TUESDAY (CARDIO)
+1. Warm-up - 5 minutes
+2. Interval training:
+   - 1 minute fast walking/running
+   - 1 minute regular walking
+   - Repeat 10 times
+3. Cool-down - 5 minutes
 
-### ЧЕТВЕРГ (СИЛОВАЯ - НИЗ)
-1. Разминка - 5 минут
-2. Приседания: 3×15
-3. Выпады: 3×12 на каждую ногу
-4. Подъемы на носки: 3×20
-5. Мостик: 3×15
-6. Планка: 3×30 секунд
-7. Растяжка - 5 минут
+### THURSDAY (STRENGTH - LOWER BODY)
+1. Warm-up - 5 minutes
+2. Squats: 3×15
+3. Lunges: 3×12 for each leg
+4. Calf raises: 3×20
+5. Glute bridge: 3×15
+6. Plank: 3×30 seconds
+7. Stretching - 5 minutes
 
-### ПЯТНИЦА (КАРДИО + ЛЕГКАЯ СИЛОВАЯ)
-1. Разминка - 5 минут
-2. Кардио - 15 минут (ходьба, бег или велосипед)
-3. Круговая тренировка (3 круга):
-   - Приседания: 15 повторений
-   - Отжимания с колен: 10 повторений
-   - Скручивания: 15 повторений
-   - Планка: 30 секунд
-4. Растяжка - 5 минут
+### FRIDAY (CARDIO + LIGHT STRENGTH)
+1. Warm-up - 5 minutes
+2. Cardio - 15 minutes (walking, running, or cycling)
+3. Circuit training (3 rounds):
+   - Squats: 15 repetitions
+   - Knee push-ups: 10 repetitions
+   - Crunches: 15 repetitions
+   - Plank: 30 seconds
+4. Stretching - 5 minutes
 
-## РЕКОМЕНДАЦИИ ПО ПИТАНИЮ
-- Увеличьте потребление белка (мясо, рыба, яйца, творог)
-- Ешьте сложные углеводы (овощи, крупы, бобовые)
-- Контролируйте уровень сахара из-за диабета
-- Пейте не менее 2 литров воды в день
-- Питайтесь часто и небольшими порциями (4-5 раз в день)
+## NUTRITION RECOMMENDATIONS
+- Increase protein intake (meat, fish, eggs, cottage cheese)
+- Eat complex carbohydrates (vegetables, grains, legumes)
+- Monitor sugar levels due to diabetes
+- Drink at least 2 liters of water per day
+- Eat frequently and in small portions (4-5 times a day)
 
-## ОТСЛЕЖИВАНИЕ ПРОГРЕССА
-- Ведите дневник тренировок
-- Делайте фото до и после
-- Измеряйте обхваты тела раз в неделю
-- Регулярно контролируйте вес (1-2 раза в неделю)
-- Обращайте внимание на самочувствие и энергию
+## PROGRESS TRACKING
+- Keep a workout journal
+- Take before and after photos
+- Measure body circumferences once a week
+- Regularly monitor weight (1-2 times a week)
+- Pay attention to well-being and energy
 
-## ОСОБЫЕ РЕКОМЕНДАЦИИ
-- При симптомах гипогликемии немедленно прекратите тренировку
-- Носите с собой быстрые углеводы (сок, конфета)
-- Проверяйте уровень сахара до и после тренировок
-- Тренируйтесь через 1-2 часа после еды
-- Увеличивайте нагрузку постепенно
+## SPECIAL RECOMMENDATIONS
+- Stop training immediately if hypoglycemia symptoms appear
+- Carry fast carbs with you (juice, candy)
+- Check sugar levels before and after workouts
+- Exercise 1-2 hours after eating
+- Increase intensity gradually
 
-Эта программа составлена с учетом вашего уровня и особенностей здоровья. Постепенно вы сможете увеличивать интенсивность тренировок.`
+This program is designed considering your level and health specifics. Gradually you'll be able to increase workout intensity.`
 	}
 
-	// Заглушка для обычных вопросов
-	return "🤖 Автономный режим (OpenAI недоступен):\n\n" +
-		"Я не могу сейчас связаться с OpenAI, но вот некоторые общие рекомендации по фитнесу:\n\n" +
-		"1. Регулярные тренировки (3-5 раз в неделю) - ключ к успеху\n" +
-		"2. Комбинируйте кардио и силовые тренировки для комплексного результата\n" +
-		"3. Правильное питание составляет 70% успеха в достижении фитнес-целей\n" +
-		"4. Следите за восстановлением и обеспечивайте организму достаточный отдых\n" +
-		"5. Постепенно увеличивайте нагрузку для постоянного прогресса\n\n" +
-		"Задайте свой вопрос позже, когда сервис будет доступен. Время запроса: " + time.Now().Format("15:04:05")
+	// Fallback for regular questions
+	return "🤖 Autonomous mode (OpenAI unavailable):\n\n" +
+		"I can't connect to OpenAI right now, but here are some general fitness recommendations:\n\n" +
+		"1. Regular workouts (3-5 times a week) are the key to success\n" +
+		"2. Combine cardio and strength training for comprehensive results\n" +
+		"3. Proper nutrition accounts for 70% of success in achieving fitness goals\n" +
+		"4. Monitor recovery and ensure your body gets enough rest\n" +
+		"5. Gradually increase intensity for continuous progress\n\n" +
+		"Ask your question later when the service is available. Request time: " + time.Now().Format("15:04:05")
 }
