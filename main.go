@@ -160,6 +160,67 @@ func main() {
 			"time":   time.Now().Format(time.RFC3339),
 		})
 	})
+	// Настройка статических файлов
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+
+	// Обработчик успешной оплаты
+	http.HandleFunc("/payment/success", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Получен запрос на страницу успешной оплаты: %s", r.URL.String())
+
+		// Получаем ID сессии из URL
+		sessionID := r.URL.Query().Get("session_id")
+		if sessionID != "" {
+			log.Printf("ID сессии оплаты: %s", sessionID)
+
+			// Пытаемся обработать успешный платеж через webhook,
+			// если пользователь вернулся через success_url
+			if os.Getenv("STRIPE_TEST_MODE") == "true" {
+				go func() {
+					log.Printf("Тестовый режим: автоматическая обработка успешного платежа")
+					// Даем время на обработку обычного webhook
+					time.Sleep(2 * time.Second)
+
+					// Обрабатываем платеж, если он еще не был обработан
+					webhookHandler.bot.ProcessPaymentWebhook(sessionID)
+				}()
+			}
+		}
+
+		// Отправляем HTML-страницу успешной оплаты
+		http.ServeFile(w, r, "./static/succed.html")
+	})
+
+	// Обработчик отмены оплаты
+	http.HandleFunc("/payment/cancel", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Получен запрос на страницу отмены оплаты")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(`
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Оплата отменена</title>
+            <script>
+                // Автоматический редирект в Telegram через 3 секунды
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.location.href = 'tg://';
+                        
+                        // Запасной вариант, если tg:// не сработает
+                        setTimeout(function() {
+                            window.location.href = 'https://web.telegram.org/';
+                        }, 1000);
+                    }, 3000);
+                }
+            </script>
+        </head>
+        <body style="text-align: center; margin-top: 50px;">
+            <h1>Оплата отменена</h1>
+            <p>Вы будете перенаправлены обратно в Telegram через 3 секунды...</p>
+            <a href="tg://">Вернуться в Telegram сейчас</a>
+        </body>
+        </html>
+    `))
+	})
 
 	// Запуск HTTP сервера
 	port := os.Getenv("PORT")

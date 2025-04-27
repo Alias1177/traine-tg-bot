@@ -35,9 +35,22 @@ type PaymentConfig struct {
 
 // GetDefaultPaymentConfig возвращает конфигурацию по умолчанию
 func GetDefaultPaymentConfig() PaymentConfig {
+	// Определяем базовый URL
 	baseURL := os.Getenv("BOT_WEBHOOK_BASE_URL")
 	if baseURL == "" {
-		baseURL = "https://example.com" // Заглушка, нужно заменить на реальный URL
+		// Для локального тестирования
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "4242"
+		}
+		baseURL = fmt.Sprintf("http://localhost:%s", port)
+
+		// Проверяем режим работы Stripe
+		if os.Getenv("STRIPE_TEST_MODE") == "true" {
+			log.Println("Работаем в тестовом режиме Stripe, URL перенаправления будут игнорироваться")
+		} else {
+			log.Println("ВНИМАНИЕ: Установите BOT_WEBHOOK_BASE_URL для корректной работы перенаправлений!")
+		}
 	}
 
 	return PaymentConfig{
